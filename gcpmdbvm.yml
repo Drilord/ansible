@@ -37,61 +37,101 @@
     # Play 1: Ensure Required Tools are Installed
     # =============================================================================
     - name: Ensure Required Tools are Installed
-      hosts: localhost
+      hosts: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
       gather_facts: false
       tasks:
-        - name: Ensure Python is installed
-          ansible.builtin.shell: |
-            sudo apt-get update
-            sudo apt-get install -y python3 python3-pip
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-          delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
+        - name: Check if Python 3 is installed
+          raw: |
+            dpkg -l | grep python3
+          register: check_python3
+          changed_when: false
+          failed_when: check_python3.rc not in [0, 1]
 
-        - name: Ensure MySQL library for Ansible is installed
+        - name: Install Python 3 if not present
+          raw: |
+            apt-get update && apt-get install -y python3
+          when: check_python3.rc == 1
+          register: install_python3
+          changed_when: install_python3.rc == 0
+
+        - name: Check if python3-mysqldb is installed
+          raw: |
+            dpkg -l | grep python3-mysqldb
+          register: check_python3_mysqldb
+          changed_when: false
+          failed_when: check_python3_mysqldb.rc not in [0, 1]
+
+        - name: Install python3-mysqldb if not present
+          raw: |
+            apt-get install -y python3-mysqldb
+          when: check_python3_mysqldb.rc == 1
+          register: install_python3_mysqldb
+          changed_when: install_python3_mysqldb.rc == 0
+
+        - name: Check if MariaDB is installed
           ansible.builtin.shell: |
-            pip3 install mysql-connector-python
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-          delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
-          
-        - name: Install MariaDB on the VM
+            dpkg -l | grep mariadb-server
+          register: check_mariadb
+          changed_when: false
+          failed_when: check_mariadb.rc not in [0, 1]
+
+        - name: Install MariaDB on the VM if not present
           ansible.builtin.shell: |
             sudo apt-get update
             sudo apt-get install -y mariadb-server
+          when: check_mariadb.rc == 1
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-          delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
 
-        - name: Install Tailscale on the VM
+        - name: Check if Tailscale is installed
+          ansible.builtin.shell: |
+            tailscale version
+          register: check_tailscale
+          changed_when: false
+          failed_when: check_tailscale.rc not in [0, 1]
+
+        - name: Install Tailscale if not present
           ansible.builtin.shell: |
             curl -fsSL https://tailscale.com/install.sh | sh
-            sudo tailscale up
+          when: check_tailscale.rc == 1
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-            delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
 
-        - name: Authenticate Tailscale using OAuth
+        - name: Check if Tailscale is running
           ansible.builtin.shell: |
-              sudo tailscale up --authkey=$(curl -s -X POST https://api.tailscale.com/api/v2/oauth/token \
-              -d client_id=your-client-id \
-              -d client_secret=your-client-secret \
-              -d grant_type=client_credentials | jq -r '.access_token')
+            sudo tailscale status
+          register: check_tailscale_status
+          changed_when: false
+          failed_when: check_tailscale_status.rc not in [0, 1]
+
+        - name: Start Tailscale if not running
+          ansible.builtin.shell: |
+            sudo tailscale up
+          when: check_tailscale_status.rc == 1
           args:
-              ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-          delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"    
-        
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Authenticate Tailscale using OAuth if not authenticated
+          ansible.builtin.shell: |
+            sudo tailscale up --authkey=$(curl -s -X POST https://api.tailscale.com/api/v2/oauth/token \
+            -d client_id=your-client-id \
+            -d client_secret=your-client-secret \
+            -d grant_type=client_credentials | jq -r '.access_token')
+          when: "'Logged in as' not in check_tailscale_status.stdout"
+          args:
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
         - name: Configure Tailscale for Tailscale SSH
           ansible.builtin.shell: |
             sudo tailscale up --ssh
+          when: "'ssh' not in check_tailscale_status.stdout"
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-          delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
 
-        - name: Disable local SSH
+        - name: Disable local SSH if Tailscale SSH is enabled
           ansible.builtin.shell: |
             sudo systemctl stop ssh
             sudo systemctl disable ssh
+          when: "'ssh' in check_tailscale_status.stdout"
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-          delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"

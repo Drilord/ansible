@@ -1,5 +1,5 @@
 ---
-# setup_replica.yml
+# mariadbreplication.yml
 # Playbook to configure a MariaDB replica using a dump from the master.
 # =============================================================================
 # Play 0: Ensure Required Tools are Installed

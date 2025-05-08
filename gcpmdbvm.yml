@@ -1,0 +1,50 @@
+---
+# Playbook to configure a MariaDB vm using in GCP.
+# =============================================================================
+# Play 0: Ensure Required Tools are Installed
+# =============================================================================
+- name: Create a small VM and install MariaDB
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Create a small VM
+      community.general.gcp_compute_instance:
+        name: mock-vm
+        machine_type: f1-micro
+        zone: us-central1-a
+        project: mock-project
+        auth_kind: serviceaccount
+        service_account_file: /path/to/your/service-account.json
+        disks:
+          - auto_delete: true
+            boot: true
+            initialize_params:
+              source_image: projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts   
+        network_interfaces:
+          - network: default
+            access_configs:
+              - name: External NAT
+                type: ONE_TO_ONE_NAT
+      register: vm_instance
+
+    - name: Wait for SSH to become available
+      wait_for:
+        host: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
+        port: 22
+        timeout: 300
+
+    - name: Install MariaDB on the VM
+      ansible.builtin.shell: |
+        sudo apt-get update
+        sudo apt-get install -y mariadb-server
+      args:
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+      delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
+
+    - name: Install Tailscale on the VM
+      ansible.builtin.shell: |
+        curl -fsSL https://tailscale.com/install.sh | sh
+        sudo tailscale up
+      args:
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+      delegate_to: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"

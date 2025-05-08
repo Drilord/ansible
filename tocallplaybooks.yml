@@ -1,0 +1,12 @@
+# =============================================================================
+# Play 2: Configure Replica
+# =============================================================================
+
+- name: Configure Replica
+  hosts: mariadb_replica
+  gather_facts: no
+  become: yes
+
+  tasks:
+    - name: Include playbook to configure replica
+      include_tasks: confreplicas.yml

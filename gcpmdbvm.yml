@@ -1,5 +1,5 @@
 ---
-# Playbook to configure a MariaDB vm using in GCP.
+# Playbook to configure a MariaDB vm for replication using in GCP.
 # =============================================================================
 # Play 0: Create a small VM and install MariaDB
 # =============================================================================
@@ -9,10 +9,10 @@
   tasks:
     - name: Create a small VM
       community.general.gcp_compute_instance:
-        name: mock-vm
-        machine_type: f1-micro
+        name: replica1
+        machine_type: e2-standard-2
         zone: us-central1-a
-        project: mock-project
+        project: production 
         auth_kind: serviceaccount
         service_account_file: /path/to/your/service-account.json
         disks:
@@ -106,7 +106,7 @@
 
         - name: Start Tailscale if not running
           ansible.builtin.shell: |
-            sudo tailscale up
+            sudo tailscale up --tag=staging
           when: check_tailscale_status.rc == 1
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
@@ -116,14 +116,14 @@
             sudo tailscale up --authkey=$(curl -s -X POST https://api.tailscale.com/api/v2/oauth/token \
             -d client_id=your-client-id \
             -d client_secret=your-client-secret \
-            -d grant_type=client_credentials | jq -r '.access_token')
+            -d grant_type=client_credentials | jq -r '.access_token') --tag=staging
           when: "'Logged in as' not in check_tailscale_status.stdout"
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
 
         - name: Configure Tailscale for Tailscale SSH
           ansible.builtin.shell: |
-            sudo tailscale up --ssh
+            sudo tailscale up --ssh --tag=staging
           when: "'ssh' not in check_tailscale_status.stdout"
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
@@ -133,5 +133,41 @@
             sudo systemctl stop ssh
             sudo systemctl disable ssh
           when: "'ssh' in check_tailscale_status.stdout"
+          args:
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Check if AppArmor is installed
+          ansible.builtin.shell: |
+            dpkg -l | grep apparmor
+          register: check_apparmor
+          changed_when: false
+          failed_when: check_apparmor.rc not in [0, 1]
+
+        - name: Install AppArmor if not present
+          ansible.builtin.shell: |
+            sudo apt-get update
+            sudo apt-get install -y apparmor apparmor-utils
+          when: check_apparmor.rc == 1
+          args:
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Check if MariaDB AppArmor profile exists
+          ansible.builtin.shell: |
+            sudo aa-status | grep mariadb
+          register: check_mariadb_apparmor
+          changed_when: false
+          failed_when: check_mariadb_apparmor.rc not in [0, 1]
+
+        - name: Apply MariaDB AppArmor profile if not applied
+          ansible.builtin.shell: |
+            sudo ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/enable/
+            sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.mysqld
+          when: check_mariadb_apparmor.rc == 1
+          args:
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+        - name: Reload AppArmor to apply changes
+          ansible.builtin.shell: |
+            sudo systemctl reload apparmor
           args:
             ansible_ssh_common_args: '-o StrictHostKeyChecking=no'

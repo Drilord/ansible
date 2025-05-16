@@ -1,0 +1,257 @@
+---
+# mariadbreplication.yml
+# Playbook to configure a MariaDB replica using a dump from the master.
+# =============================================================================
+# Play 0: Ensure Required Tools are Installed
+# =============================================================================
+- name: Ensure Required Tools are Installed
+  hosts: all
+  gather_facts: no
+  become: yes # Use root privileges if needed
+
+  tasks:
+    - name: Check if Python 3 is installed
+      raw: |
+        dpkg -l | grep python3
+      register: check_python3
+      changed_when: false
+      failed_when: check_python3.rc not in [0, 1]
+
+    - name: Install Python 3 if not present
+      raw: |
+        apt-get update && apt-get install -y python3
+      when: check_python3.rc == 1
+      register: install_python3
+      changed_when: install_python3.rc == 0
+
+    - name: Check if python3-mysqldb is installed
+      raw: |
+        dpkg -l | grep python3-mysqldb
+      register: check_python3_mysqldb
+      changed_when: false
+      failed_when: check_python3_mysqldb.rc not in [0, 1]
+
+    - name: Install python3-mysqldb if not present
+      raw: |
+        apt-get install -y python3-mysqldb
+      when: check_python3_mysqldb.rc == 1
+      register: install_python3_mysqldb
+      changed_when: install_python3_mysqldb.rc == 0
+
+# =============================================================================
+# Play 1: Configure Replica
+# =============================================================================
+- name: Configure MariaDB Replica
+  hosts: mariadb_replica
+  gather_facts: no
+  become: yes # Use root privileges
+
+  vars:
+    # Ensure MariaDB service name matches your container setup
+    mariadb_service_name: mariadb # or mysql
+    gtid_domain_id: 1 # GTID domain ID matching the master
+    # Ensure MariaDB data directory path matches your container setup
+    mariadb_data_dir: /var/lib/mysql
+    # Path for the dump file on the replica
+    dump_file_path: /tmp/final_snapshot.sql.gz
+
+  tasks: 
+
+    - name: Check replication status
+      ansible.builtin.command: >
+        mysql -u root -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: false  # Do not fail if replication is not set
+      retries: 2
+      delay: 3
+
+    - name: Skip remaining tasks if replication is running
+      ansible.builtin.meta: end_host
+      when: >
+        'Slave_IO_Running: Yes' in slave_status.stdout and
+        'Slave_SQL_Running: Yes' in slave_status.stdout
+
+    - name: Remove existing maxscale_user grants
+      ansible.builtin.shell: >
+        mysql -uroot -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
+      register: revoke_grants
+      changed_when: revoke_grants.rc == 0
+      ignore_errors: true  # Ignore errors if the user does not exist
+
+    - name: Create or update maxscale_user on all replicas
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ db_root_password }}"
+        name: maxscale_user
+        password: "maxscale_password"
+        host: '%'
+        priv: '*.*:REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE'
+        state: present
+        update_password: always
+
+    - name: Create Laravel user on replicas
+      community.mysql.mysql_user:
+        login_user: root
+        login_password: "{{ db_root_password }}"
+        name: laravel
+        password: laravel
+        host: '%'
+        priv: '*.*:ALL'
+        state: present
+        update_password: always    
+
+    - name: Drop all non-system databases on replica
+      ansible.builtin.command: >
+        mysql -uroot -e "
+        SET GLOBAL FOREIGN_KEY_CHECKS = 0;
+        SELECT CONCAT('DROP DATABASE `', schema_name, '`;')
+        FROM information_schema.schemata
+        WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');
+        SET GLOBAL FOREIGN_KEY_CHECKS = 1;"
+      register: drop_databases
+      changed_when: drop_databases.rc == 0
+
+    - name: Configure MariaDB replica settings (my.cnf)
+      ansible.builtin.blockinfile:
+        path: /etc/mysql/my.cnf # Adjust path if different
+        block: |
+          [mysqld]
+          server_id={{ replica_server_id }}
+          log_bin=mysql-bin
+          relay_log=mysql-relay-bin
+          binlog_format=ROW
+          log_slave_updates=ON
+          read_only=ON
+          gtid_domain_id={{ gtid_domain_id }}
+          gtid_strict_mode=ON
+          report_host={{ ansible_host }}
+          report_port=3306
+          innodb_buffer_pool_size=256M
+          innodb_doublewrite=0
+          innodb_flush_log_at_trx_commit=0
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - REPLICA SETTINGS"
+        create: yes # Create file if it doesn't exist (adjust if needed)
+
+    - name: Restart MariaDB container
+      ansible.builtin.shell: >
+        docker restart "{{ hostvars[inventory_hostname]['replica_container_name'] }}"    
+      register: restart_result
+      changed_when: restart_result.rc == 0
+      delegate_to: localhost
+
+    - name: Display restart result
+      ansible.builtin.debug:
+        var: restart_result.stdout
+      delegate_to: localhost
+
+    - name: Debug MariaDB configuration file (new variables only)
+      ansible.builtin.shell: >
+        grep -E "server_id|log_bin|relay_log|binlog_format|log_slave_updates|read_only|gtid_domain_id|gtid_strict_mode|report_host|report_port|innodb_buffer_pool_size|innodb_doublewrite|innodb_flush_log_at_trx_commit" /etc/mysql/my.cnf
+      register: mycnf_new_variables
+      changed_when: false
+
+    - name: Display new MariaDB configuration variables
+      ansible.builtin.debug:
+        var: mycnf_new_variables.stdout
+
+    - name: Restore database dump on replica
+      ansible.builtin.shell: >
+        gunzip < {{ dump_file_path }} | mysql -uroot
+      register: restore_result
+      changed_when: restore_result.rc == 0
+     # no_log: true # Avoid logging password
+
+    - name: Remove dump file from all replicas (optional cleanup)
+      ansible.builtin.file:
+        path: "{{ dump_file_path }}"
+        state: absent
+
+
+    - name: Wait for MariaDB port (3306) on replica
+      ansible.builtin.wait_for:
+        port: 3306
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        timeout: 60
+        delay: 5
+
+    - name: Stop replication on all replicas
+      ansible.builtin.shell: >
+        mysql -uroot -e "STOP SLAVE;"
+      register: stop_slave
+      changed_when: stop_slave.rc == 0
+
+    - name: Reset replication state on all replicas
+      ansible.builtin.shell: >
+        mysql -uroot -e "RESET SLAVE ALL;"
+      register: reset_slave
+      changed_when: reset_slave.rc == 0
+
+    - name: Reset binary logs on all replicas (if binary logs exist)
+      ansible.builtin.shell: >
+        mysql -uroot -e "RESET MASTER;"
+      register: reset_master
+      changed_when: reset_master.rc == 0    
+
+    - name: Read master's GTID state from file
+      ansible.builtin.slurp:
+        src: "/tmp/master_gtid_state.txt" # Path on the Ansible controller
+      register: gtid_state_file
+
+    - name: Decode master's GTID state
+      ansible.builtin.set_fact:
+        master_gtid_state: "{{ gtid_state_file.content | b64decode }}"
+
+    - name: Set replica's GTID state
+      ansible.builtin.shell: >
+        mysql -uroot -e "SET GLOBAL gtid_slave_pos='{{ master_gtid_state }}';"
+      register: set_gtid_state
+      changed_when: set_gtid_state.rc == 0
+
+    - name: Configure replication connection on replica
+      ansible.builtin.shell: >
+        mysql -uroot -e "
+        CHANGE MASTER TO
+          MASTER_HOST='{{ hostvars[groups['mariadb_master'][0]]['ansible_host'] | default(groups['mariadb_master'][0]) }}',
+          MASTER_USER='{{ db_repl_user }}',
+          MASTER_PASSWORD='{{ db_repl_password }}',
+          MASTER_USE_GTID=slave_pos;"
+      register: configure_replication
+      changed_when: configure_replication.rc == 0
+
+    - name: Start replication threads on replica
+      ansible.builtin.shell: >
+        mysql -uroot -e "START SLAVE;"
+      register: start_replication
+      changed_when: start_replication.rc == 0
+
+    - name: Check replication status
+      ansible.builtin.command: >
+        mysql -u root -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: >
+        'Slave_IO_Running: Yes' not in slave_status.stdout or
+        'Slave_SQL_Running: Yes' not in slave_status.stdout
+      retries: 5
+      delay: 10
+
+    - name: Display final replication status
+      ansible.builtin.debug:
+        msg:
+          - "Replication IO Thread Running: {{ slave_status.stdout | regex_search('Slave_IO_Running: (\\w+)', '\\1') | first }}"
+          - "Replication SQL Thread Running: {{ slave_status.stdout | regex_search('Slave_SQL_Running: (\\w+)', '\\1') | first }}"
+          - "Seconds Behind Master: {{ slave_status.stdout | regex_search('Seconds_Behind_Master: (\\d+)', '\\1') | first }}"
+          - "Last IO Error: {{ slave_status.stdout | regex_search('Last_IO_Error: (.*)', '\\1') | first }}"
+          - "Last SQL Error: {{ slave_status.stdout | regex_search('Last_SQL_Error: (.*)', '\\1') | first }}"
+
+    - name: Check Docker container status
+      ansible.builtin.docker_container_info:
+        name: "{{ inventory_hostname }}"
+      register: container_status
+      delegate_to: localhost
+
+    - name: Display Docker container status
+      ansible.builtin.debug:
+        var: container_status
+      delegate_to: localhost

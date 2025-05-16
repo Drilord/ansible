@@ -1,0 +1,183 @@
+# Playbook to configure the master for replication.
+# =============================================================================
+# Play 0: Ensure Required Tools are Installed
+# =============================================================================
+- name: Ensure Required Tools are Installed
+  hosts: mariadb_master
+  gather_facts: no
+  become: yes # Use root privileges if needed
+
+  tasks:
+    - name: Check if Python 3 is installed
+      raw: |
+        dpkg -l | grep python3
+      register: check_python3
+      changed_when: false
+      failed_when: check_python3.rc not in [0, 1]
+
+    - name: Install Python 3 if not present
+      raw: |
+        apt-get update && apt-get install -y python3
+      when: check_python3.rc == 1
+      register: install_python3
+      changed_when: install_python3.rc == 0
+
+    - name: Check if python3-mysqldb is installed
+      raw: |
+        dpkg -l | grep python3-mysqldb
+      register: check_python3_mysqldb
+      changed_when: false
+      failed_when: check_python3_mysqldb.rc not in [0, 1]
+
+    - name: Install python3-mysqldb if not present
+      raw: |
+        apt-get install -y python3-mysqldb
+      when: check_python3_mysqldb.rc == 1
+      register: install_python3_mysqldb
+      changed_when: install_python3_mysqldb.rc == 0
+
+# =============================================================================
+# Play 1: Prepare Master (Check GTID Settings)
+# =============================================================================
+- name: Prepare MariaDB Master for Replication
+  hosts: mariadb_master
+  gather_facts: no
+  become: yes # Use root privileges if needed for mysql commands
+
+  vars:
+    # Default master server_id (adjust if different)
+    master_server_id: 1
+
+  tasks:
+    - name: Ensure MariaDB process is running on master
+      ansible.builtin.command: pgrep mysqld
+      register: mysql_process_check
+      changed_when: false
+      failed_when: mysql_process_check.rc != 0
+
+    - name: Check GTID settings on master
+      ansible.builtin.command: >
+        mysql -u root -e "
+        SHOW VARIABLES LIKE 'log_bin';
+        SHOW VARIABLES LIKE 'binlog_format';
+        SHOW VARIABLES LIKE 'server_id';
+        SHOW VARIABLES LIKE 'gtid_domain_id';"
+      register: gtid_check
+      changed_when: false
+      failed_when: gtid_check.rc != 0
+
+    - name: Configure GTID-related settings dynamically
+      ansible.builtin.command: >
+        mysql -u root  -e "
+        SET GLOBAL log_bin = 'mysql-bin';
+        SET GLOBAL binlog_format = 'ROW';
+        SET GLOBAL server_id = {{ master_server_id }};
+        SET GLOBAL gtid_domain_id = 1;"
+      when: >
+        gtid_check.stdout.find('log_bin\tON') == -1 or
+        gtid_check.stdout.find('binlog_format\tROW') == -1 or
+        gtid_check.stdout.find('server_id\t{{ master_server_id }}') == -1 or
+        gtid_check.stdout.find('gtid_domain_id\t1') == -1
+
+    - name: Persist GTID settings in my.cnf
+      ansible.builtin.blockinfile:
+        path: /etc/mysql/my.cnf # Adjust path if different
+        block: |
+          [mysqld]
+          server_id={{ master_server_id }}
+          log_bin=mysql-bin
+          binlog_format=ROW
+          gtid_domain_id=1
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - GTID SETTINGS"
+        create: yes
+
+# =============================================================================
+# Play 2: Create Snapshot from Master and Copy to Replica
+# =============================================================================
+- name: Create Snapshot from Master and Copy to Replica
+  hosts: mariadb_master
+  gather_facts: no
+  become: yes # Use root privileges if needed for docker commands
+
+  vars:
+    # Path for the snapshot file inside the container
+    snapshot_file_path: /tmp/final_snapshot.sql.gz
+
+  tasks:
+    - name: Ensure MariaDB container is running
+      ansible.builtin.command: docker ps --filter "name=mysql" --filter "status=running" --format "{{.Names}}"
+      register: mysql_container_check
+      changed_when: false
+      failed_when: "'mysql' not in mysql_container_check.stdout"
+
+    - name: Ensure MariaDB process is running inside the container
+      ansible.builtin.command: docker exec mysql pgrep mysqld
+      register: mysql_process_check
+      changed_when: false
+      failed_when: mysql_process_check.rc != 0
+
+    - name: Create replication user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -uroot -e "
+        CREATE USER IF NOT EXISTS '{{ db_repl_user }}'@'%' IDENTIFIED BY '{{ db_repl_password }}';
+        GRANT REPLICATION SLAVE, RELOAD, PROCESS ON *.* TO '{{ db_repl_user }}'@'%';"
+      register: create_repl_user
+      changed_when: create_repl_user.rc == 0
+
+    - name: Remove existing maxscale_user grants
+      ansible.builtin.shell: >
+        docker exec mysql mysql -uroot -e "
+        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
+      register: revoke_grants
+      changed_when: revoke_grants.rc == 0
+      ignore_errors: true  # Ignore errors if the user does not exist
+
+    - name: Create or update maxscale_user on all replicas
+      ansible.builtin.shell: >
+        docker exec mysql mysql -uroot -e "
+        CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY 'maxscale_password';
+        GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';"
+      register: create_maxscale_user
+      changed_when: create_maxscale_user.rc == 0
+
+    - name: Create Laravel user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -uroot -e "
+        CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY 'laravel';
+        GRANT ALL PRIVILEGES ON *.* TO 'laravel'@'%';"
+      register: create_laravel_user
+      changed_when: create_laravel_user.rc == 0
+
+    - name: Get master's GTID state
+      ansible.builtin.shell: >
+        docker exec mysql mysql -uroot -e "SHOW VARIABLES LIKE 'gtid_binlog_pos';" | awk '/gtid_binlog_pos/ {print $2}'
+      register: master_gtid_state
+      changed_when: false
+
+    - name: Display master's GTID state
+      ansible.builtin.debug:
+        msg: "Master's GTID state: {{ master_gtid_state.stdout }}"
+
+    - name: Save master's GTID state to a file
+      ansible.builtin.copy:
+        content: "{{ master_gtid_state.stdout }}"
+        dest: "/tmp/master_gtid_state.txt" # Path on the Ansible controller
+
+    - name: Create database snapshot on master
+      ansible.builtin.shell: >
+        docker exec mysql mariadb-dump --all-databases --ignore-database=mysql --master-data=2 --single-transaction --events --routines \
+        -uroot | gzip > /tmp/final_snapshot.sql.gz
+      register: snapshot_result
+      changed_when: snapshot_result.rc == 0
+      #no_log: true # Avoid logging password
+
+    - name: Stream snapshot directly to replicas
+      ansible.builtin.shell: >
+        cat /tmp/final_snapshot.sql.gz | ssh {{ item }} "cat > {{ snapshot_file_path }}"
+      delegate_to: "{{ groups['mariadb_master'][0] }}" # Run this task on the master
+      with_items: "{{ groups['mariadb_replica'] }}" # Loop over all replica hosts
+
+    - name: Remove dump file from master (optional cleanup)
+      ansible.builtin.command: rm -f /tmp/final_snapshot.sql.gz
+      register: cleanup_result
+      changed_when: cleanup_result.rc == 0

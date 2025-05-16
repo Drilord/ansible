@@ -12,12 +12,18 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# add docker conection tools 
+# Add Docker connection tools
 RUN apt-get update && \
-apt-get install -y python3-pip python3-docker docker.io && \
-apt-get clean && \
-rm -rf /var/lib/apt/lists/*
+    apt-get install -y python3-pip python3-docker docker.io && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
+# Install curl and Tailscale
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -fsSL https://tailscale.com/install.sh | sh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set the default command to keep the container running
 CMD ["sleep", "infinity"]

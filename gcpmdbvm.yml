@@ -1,173 +1,136 @@
 ---
-# Playbook to configure a MariaDB vm for replication using in GCP.
+# Playbook to configure a MariaDB VM for replication using GCP.
 # =============================================================================
-# Play 0: Create a small VM and install MariaDB
+# Play 0: Check if the VM exists and create it if necessary
 # =============================================================================
-- name: Create a small VM and install MariaDB
+- name: Check if the VM exists and create it if necessary
   hosts: localhost
   gather_facts: false
+  vars_files:
+    - ./gcp.yml
   tasks:
-    - name: Create a small VM
+    - name: Check if the VM already exists
+      community.general.gcp_compute_instance_info:
+        name: replica1
+        zone: us-central1-a
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+      register: vm_info
+
+    - name: Create the VM if it does not exist
       community.general.gcp_compute_instance:
         name: replica1
         machine_type: e2-standard-2
         zone: us-central1-a
-        project: production 
+        project: "{{ gcp_project_name }}"
         auth_kind: serviceaccount
-        service_account_file: /path/to/your/service-account.json
+        service_account_file: "{{ gcp_service_account_file }}"
         disks:
           - auto_delete: true
             boot: true
             initialize_params:
-              source_image: projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts   
+              source_image: projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts
         network_interfaces:
-          - network: default
+          - network: staging-vpc
             access_configs:
               - name: External NAT
                 type: ONE_TO_ONE_NAT
+      when: vm_info.resource is not defined
       register: vm_instance
+
+    - name: Add replica1 to inventory.ini
+      ansible.builtin.lineinfile:
+        path: /etc/ansible/inventory.ini  # Replace with the actual path to your inventory file
+        insertafter: "[mariadb_replica]"
+        line: "replica1 ansible_host={{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }} ansible_user=root replica_server_id=22"
+      when: vm_info.resource is not defined
 
     - name: Wait for SSH to become available
       wait_for:
-        host: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
+        host: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP if vm_info.resource is not defined else vm_info.resources[0].networkInterfaces[0].accessConfigs[0].natIP }}"
         port: 22
         timeout: 300
 
-    # =============================================================================
-    # Play 1: Ensure Required Tools are Installed
-    # =============================================================================
-    - name: Ensure Required Tools are Installed
-      hosts: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }}"
-      gather_facts: false
-      tasks:
-        - name: Check if Python 3 is installed
-          raw: |
-            dpkg -l | grep python3
-          register: check_python3
-          changed_when: false
-          failed_when: check_python3.rc not in [0, 1]
+# =============================================================================
+# Play 1: Ensure Required Tools are Installed
+# =============================================================================
+- name: Ensure Required Tools are Installed
+  hosts: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP if vm_info.resource is not defined else vm_info.resources[0].networkInterfaces[0].accessConfigs[0].natIP }}"
+  gather_facts: false
+  vars_files:
+    - ./gcp.yml
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+  tasks:
+    - name: Check if Python 3 is installed
+      raw: |
+        dpkg -l | grep python3
+      register: check_python3
+      changed_when: false
+      failed_when: check_python3.rc not in [0, 1]
 
-        - name: Install Python 3 if not present
-          raw: |
-            apt-get update && apt-get install -y python3
-          when: check_python3.rc == 1
-          register: install_python3
-          changed_when: install_python3.rc == 0
+    - name: Install Python 3 if not present
+      raw: |
+        apt-get update && apt-get install -y python3
+      when: check_python3.rc == 1
 
-        - name: Check if python3-mysqldb is installed
-          raw: |
-            dpkg -l | grep python3-mysqldb
-          register: check_python3_mysqldb
-          changed_when: false
-          failed_when: check_python3_mysqldb.rc not in [0, 1]
+    - name: Install python3-mysqldb
+      ansible.builtin.apt:
+        name: python3-mysqldb
+        state: present
 
-        - name: Install python3-mysqldb if not present
-          raw: |
-            apt-get install -y python3-mysqldb
-          when: check_python3_mysqldb.rc == 1
-          register: install_python3_mysqldb
-          changed_when: install_python3_mysqldb.rc == 0
+    - name: Install MariaDB
+      ansible.builtin.apt:
+        name: mariadb-server
+        state: present
 
-        - name: Check if MariaDB is installed
-          ansible.builtin.shell: |
-            dpkg -l | grep mariadb-server
-          register: check_mariadb
-          changed_when: false
-          failed_when: check_mariadb.rc not in [0, 1]
+    - name: Check if Tailscale is installed
+      ansible.builtin.command:
+        cmd: tailscale version
+      register: check_tailscale
+      changed_when: false
+      failed_when: check_tailscale.rc not in [0, 1]
 
-        - name: Install MariaDB on the VM if not present
-          ansible.builtin.shell: |
-            sudo apt-get update
-            sudo apt-get install -y mariadb-server
-          when: check_mariadb.rc == 1
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    - name: Install Tailscale if not present
+      ansible.builtin.shell: |
+        curl -fsSL https://tailscale.com/install.sh | sh
+      when: check_tailscale.rc == 1
 
-        - name: Check if Tailscale is installed
-          ansible.builtin.shell: |
-            tailscale version
-          register: check_tailscale
-          changed_when: false
-          failed_when: check_tailscale.rc not in [0, 1]
+    - name: Authenticate Tailscale using OAuth if not authenticated
+      ansible.builtin.shell: |
+        sudo tailscale up --authkey=$(curl -s -X POST https://api.tailscale.com/api/v2/oauth/token \
+        -d client_id={{ tailscale_client_id }} \
+        -d client_secret={{ tailscale_client_secret }} \
+        -d grant_type=client_credentials | jq -r '.access_token') --tag=staging
+      when: "'Logged in as' not in check_tailscale.stdout"
 
-        - name: Install Tailscale if not present
-          ansible.builtin.shell: |
-            curl -fsSL https://tailscale.com/install.sh | sh
-          when: check_tailscale.rc == 1
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    - name: Configure Tailscale for Tailscale SSH
+      ansible.builtin.shell: |
+        sudo tailscale up --ssh --tag=staging
+      when: "'ssh' not in check_tailscale.stdout"
 
-        - name: Check if Tailscale is running
-          ansible.builtin.shell: |
-            sudo tailscale status
-          register: check_tailscale_status
-          changed_when: false
-          failed_when: check_tailscale_status.rc not in [0, 1]
+    - name: Disable local SSH if Tailscale SSH is enabled
+      ansible.builtin.shell: |
+        sudo systemctl stop ssh
+        sudo systemctl disable ssh
+      when: "'ssh' in check_tailscale.stdout"
 
-        - name: Start Tailscale if not running
-          ansible.builtin.shell: |
-            sudo tailscale up --tag=staging
-          when: check_tailscale_status.rc == 1
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    - name: Install AppArmor
+      ansible.builtin.apt:
+        name:
+          - apparmor
+          - apparmor-utils
+        state: present
 
-        - name: Authenticate Tailscale using OAuth if not authenticated
-          ansible.builtin.shell: |
-            sudo tailscale up --authkey=$(curl -s -X POST https://api.tailscale.com/api/v2/oauth/token \
-            -d client_id=your-client-id \
-            -d client_secret=your-client-secret \
-            -d grant_type=client_credentials | jq -r '.access_token') --tag=staging
-          when: "'Logged in as' not in check_tailscale_status.stdout"
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    - name: Apply MariaDB AppArmor profile if not applied
+      ansible.builtin.shell: |
+        sudo ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/enable/
+        sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.mysqld
+      when: "'mariadb' not in ansible_facts.packages"
 
-        - name: Configure Tailscale for Tailscale SSH
-          ansible.builtin.shell: |
-            sudo tailscale up --ssh --tag=staging
-          when: "'ssh' not in check_tailscale_status.stdout"
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    - name: Reload AppArmor to apply changes
+      ansible.builtin.service:
+        name: apparmor
+        state: reloaded
 
-        - name: Disable local SSH if Tailscale SSH is enabled
-          ansible.builtin.shell: |
-            sudo systemctl stop ssh
-            sudo systemctl disable ssh
-          when: "'ssh' in check_tailscale_status.stdout"
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-
-        - name: Check if AppArmor is installed
-          ansible.builtin.shell: |
-            dpkg -l | grep apparmor
-          register: check_apparmor
-          changed_when: false
-          failed_when: check_apparmor.rc not in [0, 1]
-
-        - name: Install AppArmor if not present
-          ansible.builtin.shell: |
-            sudo apt-get update
-            sudo apt-get install -y apparmor apparmor-utils
-          when: check_apparmor.rc == 1
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-
-        - name: Check if MariaDB AppArmor profile exists
-          ansible.builtin.shell: |
-            sudo aa-status | grep mariadb
-          register: check_mariadb_apparmor
-          changed_when: false
-          failed_when: check_mariadb_apparmor.rc not in [0, 1]
-
-        - name: Apply MariaDB AppArmor profile if not applied
-          ansible.builtin.shell: |
-            sudo ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/enable/
-            sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.mysqld
-          when: check_mariadb_apparmor.rc == 1
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-
-        - name: Reload AppArmor to apply changes
-          ansible.builtin.shell: |
-            sudo systemctl reload apparmor
-          args:
-            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'

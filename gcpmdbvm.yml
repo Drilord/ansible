@@ -1,62 +1,54 @@
 ---
 # Playbook to configure a MariaDB VM for replication using GCP.
 # =============================================================================
-# Play 0: Check if the VM exists and create it if necessary
+# Set the replica name here or pass it via --extra-vars "replica_name=replica2"
 # =============================================================================
-- name: Check if the VM exists and create it if necessary
+- name: Ensure the VM exists
   hosts: localhost
   gather_facts: false
   vars_files:
-    - ./gcp.yml
+    - /etc/ansible/group_vars/gcp.yml
   tasks:
-    - name: Check if the VM already exists
-      community.general.gcp_compute_instance_info:
-        name: replica1
-        zone: us-central1-a
-        project: "{{ gcp_project_name }}"
-        auth_kind: serviceaccount
-        service_account_file: "{{ gcp_service_account_file }}"
-      register: vm_info
-
-    - name: Create the VM if it does not exist
-      community.general.gcp_compute_instance:
-        name: replica1
+    - name: Ensure the VM exists (create if needed)
+      google.cloud.gcp_compute_instance:
+        name: "{{ replica_name }}-{{ replica_zone }}"
+        hostname: "{{ replica_name }}.mdb"
         machine_type: e2-standard-2
-        zone: us-central1-a
+        zone: "{{ replica_zone }}"
         project: "{{ gcp_project_name }}"
         auth_kind: serviceaccount
         service_account_file: "{{ gcp_service_account_file }}"
         disks:
           - auto_delete: true
             boot: true
+            device_name: boot-disk
             initialize_params:
               source_image: projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts
+              disk_name: "{{ replica_name }}-boot"
+              disk_type: pd-standard
+              disk_size_gb: 100
         network_interfaces:
-          - network: staging-vpc
+          - network: { selfLink: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/networks/staging-vpc" }
             access_configs:
               - name: External NAT
+                network_tier: STANDARD
                 type: ONE_TO_ONE_NAT
-      when: vm_info.resource is not defined
+        metadata:
+          startup-script: |
+            #!/bin/bash
+            if [ ! -f /var/log/tailscale-installed ]; then
+              curl -fsSL https://tailscale.com/install.sh | sh
+              tailscale up --authkey={{ tailscale_auth_key }} --ssh 
+              touch /var/log/tailscale-installed
+            fi
+        state: present        
       register: vm_instance
-
-    - name: Add replica1 to inventory.ini
-      ansible.builtin.lineinfile:
-        path: /etc/ansible/inventory.ini  # Replace with the actual path to your inventory file
-        insertafter: "[mariadb_replica]"
-        line: "replica1 ansible_host={{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP }} ansible_user=root replica_server_id=22"
-      when: vm_info.resource is not defined
-
-    - name: Wait for SSH to become available
-      wait_for:
-        host: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP if vm_info.resource is not defined else vm_info.resources[0].networkInterfaces[0].accessConfigs[0].natIP }}"
-        port: 22
-        timeout: 300
 
 # =============================================================================
 # Play 1: Ensure Required Tools are Installed
 # =============================================================================
 - name: Ensure Required Tools are Installed
-  hosts: "{{ vm_instance.instance.networkInterfaces[0].accessConfigs[0].natIP if vm_info.resource is not defined else vm_info.resources[0].networkInterfaces[0].accessConfigs[0].natIP }}"
+  hosts: "{{ vm_instance.networkInterfaces[0].accessConfigs[0].natIP }}"
   gather_facts: false
   vars_files:
     - ./gcp.yml
@@ -97,24 +89,28 @@
         curl -fsSL https://tailscale.com/install.sh | sh
       when: check_tailscale.rc == 1
 
-    - name: Authenticate Tailscale using OAuth if not authenticated
-      ansible.builtin.shell: |
-        sudo tailscale up --authkey=$(curl -s -X POST https://api.tailscale.com/api/v2/oauth/token \
-        -d client_id={{ tailscale_client_id }} \
-        -d client_secret={{ tailscale_client_secret }} \
-        -d grant_type=client_credentials | jq -r '.access_token') --tag=staging
-      when: "'Logged in as' not in check_tailscale.stdout"
+    - name: Check if Tailscale is authenticated
+      ansible.builtin.command: tailscale status
+      register: check_tailscale_status
+      changed_when: false
+      failed_when: false
 
-    - name: Configure Tailscale for Tailscale SSH
+    - name: Authenticate Tailscale if not authenticated
       ansible.builtin.shell: |
-        sudo tailscale up --ssh --tag=staging
-      when: "'ssh' not in check_tailscale.stdout"
+        sudo tailscale up --authkey={{ tailscale_auth_key }} --ssh 
+      when: check_tailscale_status.rc != 0
 
-    - name: Disable local SSH if Tailscale SSH is enabled
-      ansible.builtin.shell: |
-        sudo systemctl stop ssh
-        sudo systemctl disable ssh
-      when: "'ssh' in check_tailscale.stdout"
+    - name: Get Tailscale IPv4 address
+      ansible.builtin.shell: tailscale ip -4 | head -n1
+      register: tailscale_ip
+      changed_when: false
+
+    - name: Add new vm to inventory.ini
+      ansible.builtin.lineinfile:
+        path: /etc/ansible/inventory.ini
+        insertafter: "[mariadb_replica]"
+        line: "{{ replica_name }} ansible_host={{ tailscale_ip.stdout }} ansible_user=root replica_server_id={{ server_id }}"
+      when: tailscale_ip is defined and tailscale_ip.stdout != ""
 
     - name: Install AppArmor
       ansible.builtin.apt:

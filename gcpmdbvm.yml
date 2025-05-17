@@ -38,23 +38,42 @@
             #!/bin/bash
             if [ ! -f /var/log/tailscale-installed ]; then
               curl -fsSL https://tailscale.com/install.sh | sh
-              tailscale up --authkey={{ tailscale_auth_key }} --ssh 
+              tailscale up --authkey={{ tailscale_auth_key }} --ssh --hostname={{ replica_name }}
               touch /var/log/tailscale-installed
             fi
         state: present        
       register: vm_instance
+      
+    - name: Add new vm to inventory.ini using Tailscale hostname
+      ansible.builtin.lineinfile:
+        path: /etc/ansible/inventory.ini
+        insertbefore: '^\[mariadb:children\]'
+        line: "{{ replica_name }} ansible_host={{ replica_name }} ansible_user=root replica_server_id={{ server_id }}"
+
+    - name: Add new VM to in-memory inventory using Tailscale hostname
+      add_host:
+        name: "{{ replica_name }}"
+        ansible_host: "{{ replica_name }}"
+        ansible_user: root
+        replica_server_id: "{{ server_id }}"
+
 
 # =============================================================================
 # Play 1: Ensure Required Tools are Installed
 # =============================================================================
 - name: Ensure Required Tools are Installed
-  hosts: "{{ vm_instance.networkInterfaces[0].accessConfigs[0].natIP }}"
+  hosts: "{{ replica_name }}"
   gather_facts: false
   vars_files:
-    - ./gcp.yml
+    - /etc/ansible/group_vars/gcp.yml
   vars:
+    user : root # change to ansible user for prod 
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
   tasks:
+    - name: Gather installed package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
     - name: Check if Python 3 is installed
       raw: |
         dpkg -l | grep python3
@@ -77,41 +96,7 @@
         name: mariadb-server
         state: present
 
-    - name: Check if Tailscale is installed
-      ansible.builtin.command:
-        cmd: tailscale version
-      register: check_tailscale
-      changed_when: false
-      failed_when: check_tailscale.rc not in [0, 1]
-
-    - name: Install Tailscale if not present
-      ansible.builtin.shell: |
-        curl -fsSL https://tailscale.com/install.sh | sh
-      when: check_tailscale.rc == 1
-
-    - name: Check if Tailscale is authenticated
-      ansible.builtin.command: tailscale status
-      register: check_tailscale_status
-      changed_when: false
-      failed_when: false
-
-    - name: Authenticate Tailscale if not authenticated
-      ansible.builtin.shell: |
-        sudo tailscale up --authkey={{ tailscale_auth_key }} --ssh 
-      when: check_tailscale_status.rc != 0
-
-    - name: Get Tailscale IPv4 address
-      ansible.builtin.shell: tailscale ip -4 | head -n1
-      register: tailscale_ip
-      changed_when: false
-
-    - name: Add new vm to inventory.ini
-      ansible.builtin.lineinfile:
-        path: /etc/ansible/inventory.ini
-        insertafter: "[mariadb_replica]"
-        line: "{{ replica_name }} ansible_host={{ tailscale_ip.stdout }} ansible_user=root replica_server_id={{ server_id }}"
-      when: tailscale_ip is defined and tailscale_ip.stdout != ""
-
+  
     - name: Install AppArmor
       ansible.builtin.apt:
         name:
@@ -119,14 +104,17 @@
           - apparmor-utils
         state: present
 
+        
+
     - name: Apply MariaDB AppArmor profile if not applied
       ansible.builtin.shell: |
         sudo ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/enable/
         sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.mysqld
-      when: "'mariadb' not in ansible_facts.packages"
+      when: "'mariadb-server' in ansible_facts.packages"
 
     - name: Reload AppArmor to apply changes
       ansible.builtin.service:
         name: apparmor
         state: reloaded
+
 

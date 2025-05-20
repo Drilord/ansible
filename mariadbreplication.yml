@@ -195,6 +195,181 @@
       become: yes   
 
 # =============================================================================
+# Play 2: Use GCP Disk for Data Transfer
+# =============================================================================
+- name: Create and use GCP disk for MariaDB data transfer
+  hosts: mariadb_master
+  gather_facts: no
+  become: yes
+
+  vars_files:
+  - /etc/ansible/group_vars/gcp.yml
+
+  vars:
+    gcp_project: your-gcp-project
+    gcp_zone: your-gcp-zone
+    disk_name: mariadb-transfer-disk
+    disk_size_gb: 60
+    disk_type: pd-ssd
+    device_name: mariadb-transfer-disk
+    mount_point: /mnt/mariadb-transfer
+    service_account_file: "{{ gcp_service_account_file }}"
+
+  tasks:
+    - name: Create GCP disk for transfer
+      google.cloud.gcp_compute_disk:
+        name: "{{ disk_name }}"
+        size_gb: "{{ disk_size_gb }}"
+        zone: "{{ replica_zone }}"
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        type: "{{ disk_type }}"
+        state: present
+      delegate_to: localhost
+
+    - name: Attach disk to master
+      google.cloud.gcp_compute_instance_disk:
+        instance: "{{ inventory_hostname }}"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        disk: "{{ disk_name }}"
+        state: present
+      delegate_to: localhost
+
+    - name: Wait for disk device to appear
+      ansible.builtin.wait_for:
+        path: /dev/disk/by-id/google-{{ disk_name }}
+        timeout: 60
+
+    - name: Create filesystem on new disk (if needed)
+      ansible.builtin.shell: |
+        mkfs.ext4 /dev/disk/by-id/google-{{ disk_name }}
+      args:
+        creates: /dev/disk/by-id/google-{{ disk_name }}
+
+    - name: Create mount point
+      ansible.builtin.file:
+        path: "{{ mount_point }}"
+        state: directory
+
+    - name: Mount the disk
+      ansible.builtin.mount:
+        path: "{{ mount_point }}"
+        src: "/dev/disk/by-id/google-{{ disk_name }}"
+        fstype: ext4
+        state: mounted
+
+    - name: Stop MariaDB (optional, for consistency)
+      ansible.builtin.service:
+        name: mariadb
+        state: stopped
+
+    - name: Copy MariaDB data to transfer disk
+      ansible.builtin.shell: |
+        rsync -a --delete /var/lib/mysql/ {{ mount_point }}/mysql/
+      args:
+        warn: false
+
+    - name: Start MariaDB
+      ansible.builtin.service:
+        name: mariadb
+        state: started
+
+    - name: Unmount transfer disk
+      ansible.builtin.mount:
+        path: "{{ mount_point }}"
+        state: unmounted
+
+    - name: Detach disk from master
+      google.cloud.gcp_compute_instance_disk:
+        instance: "{{ inventory_hostname }}"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        disk: "{{ disk_name }}"
+        state: absent
+      delegate_to: localhost
+
+# =============================================================================
+# Play 2b: Attach disk to replica and restore data
+# =============================================================================
+- name: Attach GCP disk to replica and restore data
+  hosts: mariadb_replica
+  gather_facts: no
+  become: yes
+
+  vars:
+    gcp_project: your-gcp-project
+    gcp_zone: your-gcp-zone
+    disk_name: mariadb-transfer-disk
+    mount_point: /mnt/mariadb-transfer
+
+  tasks:
+    - name: Attach disk to replica
+      google.cloud.gcp_compute_instance_disk:
+        instance: "{{ inventory_hostname }}"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        disk: "{{ disk_name }}"
+        state: present
+      delegate_to: localhost
+
+    - name: Wait for disk device to appear
+      ansible.builtin.wait_for:
+        path: /dev/disk/by-id/google-{{ disk_name }}
+        timeout: 60
+
+    - name: Create mount point
+      ansible.builtin.file:
+        path: "{{ mount_point }}"
+        state: directory
+
+    - name: Mount the disk
+      ansible.builtin.mount:
+        path: "{{ mount_point }}"
+        src: "/dev/disk/by-id/google-{{ disk_name }}"
+        fstype: ext4
+        state: mounted
+
+    - name: Stop MariaDB
+      ansible.builtin.service:
+        name: mariadb
+        state: stopped
+
+    - name: Copy data from transfer disk to replica
+      ansible.builtin.shell: |
+        rsync -a --delete {{ mount_point }}/mysql/ /var/lib/mysql/
+      args:
+        warn: false
+
+    - name: Start MariaDB
+      ansible.builtin.service:
+        name: mariadb
+        state: started
+
+    - name: Unmount transfer disk
+      ansible.builtin.mount:
+        path: "{{ mount_point }}"
+        state: unmounted
+
+    - name: Detach disk from replica
+      google.cloud.gcp_compute_instance_disk:
+        instance: "{{ inventory_hostname }}"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        disk: "{{ disk_name }}"
+        state: absent
+      delegate_to: localhost
+
+    - name: Delete transfer disk (optional cleanup)
+      google.cloud.gcp_compute_disk:
+        name: "{{ disk_name }}"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        state: absent
+      delegate_to: localhost
+
+# =============================================================================
 # Play 3: Configure Replica
 # =============================================================================
 - name: Configure MariaDB Replica

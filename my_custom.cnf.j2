@@ -1,0 +1,25 @@
+[mysqld]
+log_bin=/var/log/mysql/mysql-bin.log
+server_id={{ server_id | default(22) }}
+expire_logs_days=60
+binlog_format=ROW
+binlog_do_db= #specify database 
+slow_query_log=ON
+slow_query_log_file=/var/log/mysql/slow.log
+long_query_time=5
+log_queries_not_using_indexes=OFF
+innodb_buffer_pool_size={{ innodb_buffer_pool_size | default('12G') }}
+innodb_buffer_pool_instances={{ innodb_buffer_pool_instances | default(8) }}
+log_slave_updates=ON
+log_error=/var/log/mysql/maria.log
+innodb_log_file_size={{ innodb_log_file_size | default('1G') }}
+innodb_log_files_in_group={{ innodb_log_files_in_group | default(2) }}
+innodb_flush_method={{ innodb_flush_method | default('O_DIRECT') }}
+innodb_io_capacity={{ innodb_io_capacity | default(2000) }}
+innodb_io_capacity_max={{ innodb_io_capacity_max | default(4000) }}
+max_connections={{ max_connections | default(250) }}
+thread_cache_size={{ thread_cache_size | default(32) }}
+tmp_table_size={{ tmp_table_size | default('128M') }}
+max_heap_table_size={{ max_heap_table_size | default('128M') }}
+query_cache_type={{ query_cache_type | default('OFF') }}
+query_cache_size={{ query_cache_size | default('0') }}

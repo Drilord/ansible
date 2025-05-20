@@ -13,7 +13,7 @@
       google.cloud.gcp_compute_instance:
         name: "{{ replica_name }}-{{ replica_zone }}"
         hostname: "{{ replica_name }}.mdb"
-        machine_type: e2-standard-2
+        machine_type: e2-standard-4
         zone: "{{ replica_zone }}"
         project: "{{ gcp_project_name }}"
         auth_kind: serviceaccount
@@ -25,7 +25,7 @@
             initialize_params:
               source_image: projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts
               disk_name: "{{ replica_name }}-boot"
-              disk_type: pd-standard
+              disk_type: pd-ssd
               disk_size_gb: 100
         network_interfaces:
           - network: { selfLink: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/networks/staging-vpc" }
@@ -90,12 +90,6 @@
       ansible.builtin.apt:
         name: python3-mysqldb
         state: present
-
-    - name: Install MariaDB
-      ansible.builtin.apt:
-        name: mariadb-server
-        state: present
-
   
     - name: Install AppArmor
       ansible.builtin.apt:
@@ -105,16 +99,94 @@
         state: present
 
         
+#    - name: Reload AppArmor to apply changes
+#      ansible.builtin.service:
+#        name: apparmor
+#        state: reloaded
 
-    - name: Apply MariaDB AppArmor profile if not applied
-      ansible.builtin.shell: |
-        sudo ln -s /etc/apparmor.d/usr.sbin.mysqld /etc/apparmor.d/enable/
-        sudo apparmor_parser -r /etc/apparmor.d/usr.sbin.mysqld
-      when: "'mariadb-server' in ansible_facts.packages"
+# =============================================================================
+# Play 2: Ensure Dockerized MariaDB Replica
+# =============================================================================
+- name: Ensure Dockerized MariaDB Replica
+  hosts: "{{ replica_name }}"
+  gather_facts: false
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+  vars:
+    mariadb_version: "10.4.33"
+    mariadb_image: "mariadb:10.4.33"
+    mariadb_data_dir: "/srv/mariadb_data"
+    mariadb_config_dir: "/opt/mariadb_config"
+    mariadb_custom_cnf: "/opt/mariadb_config/custom.cnf"
+    mariadb_container_name: "mdb-{{ replica_name }}"
+    mariadb_root_password: "{{ vault_db_root_password }}"
+    # Tuning variables (override as needed)
+    innodb_buffer_pool_size: "12G"
+    innodb_log_file_size: "1G"
+    innodb_log_files_in_group: 2
+    innodb_flush_method: "O_DIRECT"
+    innodb_io_capacity: 2000
+    innodb_io_capacity_max: 4000
+    max_connections: 250
+    thread_cache_size: 32
+    tmp_table_size: "128M"
+    max_heap_table_size: "128M"
+    query_cache_type: "OFF"
+    query_cache_size: 0
+  tasks:
+    - name: Ensure Docker is installed
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: yes
 
-    - name: Reload AppArmor to apply changes
-      ansible.builtin.service:
-        name: apparmor
-        state: reloaded
+    - name: Ensure Docker Python SDK is installed
+      ansible.builtin.pip:
+        name: docker
+        state: present
+
+    - name: Create MariaDB data directory
+      ansible.builtin.file:
+        path: "{{ mariadb_data_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create MariaDB config directory
+      ansible.builtin.file:
+        path: "{{ mariadb_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Template custom MariaDB config
+      ansible.builtin.template:
+        src: my_custom.cnf.j2
+        dest: "{{ mariadb_custom_cnf }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Pull MariaDB Docker image
+      community.docker.docker_image:
+        name: "{{ mariadb_image }}"
+        source: pull
+
+    - name: Run MariaDB Docker container
+      community.docker.docker_container:
+        name: "{{ mariadb_container_name }}"
+        image: "{{ mariadb_image }}"
+        state: started
+        restart_policy: always
+        volumes:
+          - "{{ mariadb_data_dir }}:/var/lib/mysql"
+          - "{{ mariadb_custom_cnf }}:/etc/mysql/conf.d/custom.cnf:ro"
+        env:
+          LD_PRELOAD: "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
+          MARIADB_ROOT_PASSWORD: "{{ mariadb_root_password }}"
+        memory: "12g"
+        cpus: 4
 
 

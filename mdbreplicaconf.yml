@@ -1,50 +1,99 @@
 ---
 # mariadbreplication.yml
-# Playbook to configure a MariaDB replica using a dump from the master.
+# Playbook to configure a MariaDB replica using a disk snapshot from the master.
 # =============================================================================
-# Play 0: Ensure Required Tools are Installed
+# Play 0 Prepare replica disk from master snapshot
 # =============================================================================
-- name: Ensure Required Tools are Installed
-  hosts: all
+- name: Prepare replica disk from master snapshot
+  hosts: localhost
   gather_facts: no
-  become: yes # Use root privileges if needed
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+
+  vars:
+    transfer_disk_name: master-transfer-disk
+    disk_prefix: trasferdisk
+    disk_size_gb: 60
+    disk_type: pd-ssd
+    mount_point: /mnt/mariadb-transfer
 
   tasks:
-    - name: Check if Python 3 is installed
-      raw: |
-        dpkg -l | grep python3
-      register: check_python3
-      changed_when: false
-      failed_when: check_python3.rc not in [0, 1]
+    - name: Find latest snapshot of master-transfer-disk
+      google.cloud.gcp_compute_snapshot_info:
+        project: "{{ gcp_project }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+      register: gcp_snapshots
 
-    - name: Install Python 3 if not present
-      raw: |
-        apt-get update && apt-get install -y python3
-      when: check_python3.rc == 1
-      register: install_python3
-      changed_when: install_python3.rc == 0
+    - name: Set latest snapshot name for master-transfer-disk
+      set_fact:
+        latest_snapshot: >-
+          {{
+            (
+              gcp_snapshots.resources
+              | selectattr('sourceDisk', 'search', transfer_disk_name + '$')
+              | sort(attribute='creationTimestamp', reverse=true)
+              | list
+            )[0].name
+          }}
+      when: gcp_snapshots.resources | length > 0
 
-    - name: Check if python3-mysqldb is installed
-      raw: |
-        dpkg -l | grep python3-mysqldb
-      register: check_python3_mysqldb
-      changed_when: false
-      failed_when: check_python3_mysqldb.rc not in [0, 1]
+    - name: Create disk from latest snapshot in replica zone
+      google.cloud.gcp_compute_disk:
+        name: "{{ disk_prefix }}-{{ replica_name }}"
+        zone: "{{ replica_zone }}"
+        project: "{{ gcp_project }}"
+        source_snapshot: "{{ latest_snapshot }}"
+        size_gb: "{{ disk_size_gb }}"
+        type: "{{ disk_type }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        state: present
+      delegate_to: localhost
 
-    - name: Install python3-mysqldb if not present
-      raw: |
-        apt-get install -y python3-mysqldb
-      when: check_python3_mysqldb.rc == 1
-      register: install_python3_mysqldb
-      changed_when: install_python3_mysqldb.rc == 0
+    - name: Attach disk to replica (using gcloud CLI)
+      ansible.builtin.command: >
+        gcloud compute instances attach-disk {{ replica_name }}
+        --disk={{ disk_prefix }}-{{ replica_name }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project }}
+        --quiet
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      register: attach_disk_result
+      changed_when: "'attached' in attach_disk_result.stdout or attach_disk_result.rc == 0"
+      failed_when: attach_disk_result.rc != 0 and 'already attached' not in attach_disk_result.stderr
+      delegate_to: localhost
+
+    # Optionally, mount the disk on the replica host
+    - name: Wait for disk device to appear on replica
+      ansible.builtin.wait_for:
+        path: /dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }}
+        timeout: 60
+      delegate_to: "{{ replica_name }}"
+
+    - name: Create mount point on replica
+      ansible.builtin.file:
+        path: "{{ mount_point }}"
+        state: directory
+      delegate_to: "{{ replica_name }}"
+
+    - name: Mount the disk on replica
+      ansible.builtin.mount:
+        path: "{{ mount_point }}"
+        src: "/dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }}"
+        fstype: ext4
+        state: mounted
+      delegate_to: "{{ replica_name }}"
 
 # =============================================================================
 # Play 1: Configure Replica
 # =============================================================================
-- name: Configure MariaDB Replica
-  hosts: mariadb_replica
+- name: Ensure Replication is running or Configure Replica
+  hosts:  "{{ replica_name }}"
   gather_facts: no
-  become: yes # Use root privileges
+  become: yes # Use root privileges if needed
+
 
   vars:
     # Ensure MariaDB service name matches your container setup
@@ -54,6 +103,7 @@
     mariadb_data_dir: /var/lib/mysql
     # Path for the dump file on the replica
     dump_file_path: /tmp/final_snapshot.sql.gz
+    mariadb_container_name: "mdb-{{ replica_name }}"
 
   tasks: 
 

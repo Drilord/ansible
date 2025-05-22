@@ -1,9 +1,12 @@
 # Playbook to configure the master for replication.
+# !!!!!For production we have to consider stopping the non GTID replication and reconfigure
+# the master to GTID replication then the replicas to GTID replication as non stopping
+# replication will cause errors and data corruption!!!!
 # =============================================================================
 # Play 0: Ensure Required Tools are Installed
 # =============================================================================
 - name: Ensure Required Tools are Installed
-  hosts: mariadb_master
+  hosts: master
   gather_facts: no
   become: yes # Use root privileges if needed
 
@@ -20,44 +23,44 @@
         apt-get update && apt-get install -y python3
       when: check_python3.rc == 1
       register: install_python3
-      changed_when: install_python3.rc == 0
 
-    - name: Check if python3-mysqldb is installed
-      raw: |
-        dpkg -l | grep python3-mysqldb
-      register: check_python3_mysqldb
-      changed_when: false
-      failed_when: check_python3_mysqldb.rc not in [0, 1]
+    - name: Ensure python3-mysqldb is installed
+      ansible.builtin.apt:
+       name: python3-mysqldb
+       state: present
 
-    - name: Install python3-mysqldb if not present
-      raw: |
-        apt-get install -y python3-mysqldb
-      when: check_python3_mysqldb.rc == 1
-      register: install_python3_mysqldb
-      changed_when: install_python3_mysqldb.rc == 0
+    - name: Ensure python3-pip is installed
+      ansible.builtin.apt:
+        name: python3-pip
+        state: present
+
+    - name: Ensure Docker Python SDK is installed
+      ansible.builtin.pip:
+        name: docker
+        state: present   
 
 # =============================================================================
 # Play 1: Prepare Master (Check GTID Settings)
 # =============================================================================
 - name: Prepare MariaDB Master for Replication
-  hosts: mariadb_master
+  hosts: master
   gather_facts: no
   become: yes # Use root privileges if needed for mysql commands
 
   vars:
     # Default master server_id (adjust if different)
-    master_server_id: 1
-
+    master_server_id: 11
+    cont_name: mysql #master in dbtest
   tasks:
     - name: Ensure MariaDB process is running on master
-      ansible.builtin.command: pgrep mysqld
+      ansible.builtin.command: docker exec {{ cont_name }} pgrep mysqld
       register: mysql_process_check
       changed_when: false
       failed_when: mysql_process_check.rc != 0
 
     - name: Check GTID settings on master
       ansible.builtin.command: >
-        mysql -u root -e "
+        docker exec {{ cont_name }} mysql -u root -e "
         SHOW VARIABLES LIKE 'log_bin';
         SHOW VARIABLES LIKE 'binlog_format';
         SHOW VARIABLES LIKE 'server_id';
@@ -68,40 +71,121 @@
 
     - name: Configure GTID-related settings dynamically
       ansible.builtin.command: >
-        mysql -u root  -e "
-        SET GLOBAL log_bin = 'mysql-bin';
+        docker exec {{ cont_name }} mysql -u root -e "
         SET GLOBAL binlog_format = 'ROW';
         SET GLOBAL server_id = {{ master_server_id }};
         SET GLOBAL gtid_domain_id = 1;"
       when: >
-        gtid_check.stdout.find('log_bin\tON') == -1 or
         gtid_check.stdout.find('binlog_format\tROW') == -1 or
         gtid_check.stdout.find('server_id\t{{ master_server_id }}') == -1 or
         gtid_check.stdout.find('gtid_domain_id\t1') == -1
 
-    - name: Persist GTID settings in my.cnf
-      ansible.builtin.blockinfile:
-        path: /etc/mysql/my.cnf # Adjust path if different
-        block: |
-          [mysqld]
-          server_id={{ master_server_id }}
-          log_bin=mysql-bin
-          binlog_format=ROW
-          gtid_domain_id=1
-        marker: "# {mark} ANSIBLE MANAGED BLOCK - GTID SETTINGS"
-        create: yes
+    - name: Persist server_id in my.cnf
+      ansible.builtin.shell: |
+        docker exec {{ cont_name }} bash -c "grep -q '^server_id=' /etc/mysql/my.cnf && sed -i 's/^server_id=.*/server_id={{ master_server_id }}/' /etc/mysql/my.cnf || echo 'server_id={{ master_server_id }}' >> /etc/mysql/my.cnf"
+
+    - name: Persist log_bin in my.cnf
+      ansible.builtin.shell: |
+        docker exec {{ cont_name }} bash -c "grep -q '^log_bin=' /etc/mysql/my.cnf && sed -i 's|^log_bin=.*|log_bin=/var/lib/mysql/mysqlbinlog|' /etc/mysql/my.cnf || echo 'log_bin=/var/lib/mysql/mysqlbinlog' >> /etc/mysql/my.cnf"
+
+    - name: Persist binlog_format in my.cnf
+      ansible.builtin.shell: |
+        docker exec {{ cont_name }} bash -c "grep -q '^binlog_format=' /etc/mysql/my.cnf && sed -i 's/^binlog_format=.*/binlog_format=ROW/' /etc/mysql/my.cnf || echo 'binlog_format=ROW' >> /etc/mysql/my.cnf"
+
+    - name: Persist gtid_domain_id in my.cnf
+      ansible.builtin.shell: |
+        docker exec {{ cont_name }} bash -c "grep -q '^gtid_domain_id=' /etc/mysql/my.cnf && sed -i 's/^gtid_domain_id=.*/gtid_domain_id=1/' /etc/mysql/my.cnf || echo 'gtid_domain_id=1' >> /etc/mysql/my.cnf"
+
+    - name: Persist gtid_strict_mode in my.cnf
+      ansible.builtin.shell: |
+        docker exec {{ cont_name }} bash -c "grep -q '^gtid_strict_mode=' /etc/mysql/my.cnf && sed -i 's/^gtid_strict_mode=.*/gtid_strict_mode=1/' /etc/mysql/my.cnf || echo 'gtid_strict_mode=1' >> /etc/mysql/my.cnf"
+
+    - name: Create replication user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        CREATE USER IF NOT EXISTS '{{ db_repl_user }}'@'%' IDENTIFIED BY '{{ db_repl_password }}';
+        GRANT REPLICATION SLAVE, RELOAD, PROCESS ON *.* TO '{{ db_repl_user }}'@'%';"
+      register: create_repl_user
+      changed_when: create_repl_user.rc == 0
+
+    - name: Remove existing maxscale_user grants
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
+      register: revoke_grants
+      changed_when: revoke_grants.rc == 0
+      ignore_errors: true  # Ignore errors if the user does not exist
+
+    - name: Create or update maxscale_user on all replicas
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY 'maxscale_password';
+        GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';"
+      register: create_maxscale_user
+      changed_when: create_maxscale_user.rc == 0
+
+    - name: Create Laravel user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY 'laravel';
+        GRANT ALL PRIVILEGES ON *.* TO 'laravel'@'%';"
+      register: create_laravel_user
+      changed_when: create_laravel_user.rc == 0
 
 # =============================================================================
-# Play 2: Create Snapshot from Master and Copy to Replica
+# Play 2: Ensure GCP Transfer Disk is Present and Attached to Master
+# =============================================================================
+- name: Ensure GCP transfer disk is present and attached to master
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+
+  vars:
+    
+    transfer_disk_size_gb: 60
+    transfer_disk_type: pd-ssd
+    instance_name: clone-dbtest
+
+  tasks:
+    - name: Ensure GCP disk exists
+      google.cloud.gcp_compute_disk:
+        name: "{{ transfer_disk_name }}"
+        size_gb: "{{ transfer_disk_size_gb }}"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        type: "{{ transfer_disk_type }}"
+        state: present
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+      delegate_to: localhost
+
+    - name: Ensure disk is attached to master (using gcloud CLI)
+      ansible.builtin.command: >
+        gcloud compute instances attach-disk {{ instance_name }}
+        --disk={{ transfer_disk_name }}
+        --zone={{ gcp_zone }}
+        --project={{ gcp_project }}
+        --quiet
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      register: attach_disk_result
+      changed_when: "'attached' in attach_disk_result.stdout or attach_disk_result.rc == 0"
+      failed_when: attach_disk_result.rc != 0 and 'already attached' not in attach_disk_result.stderr
+      delegate_to: localhost
+
+# =============================================================================
+# Play 3: Create Snapshot from Master and Copy to Replica
 # =============================================================================
 - name: Create Snapshot from Master and Copy to Replica
   hosts: mariadb_master
-  gather_facts: no
-  become: yes # Use root privileges if needed for docker commands
-
+  gather_facts: yes  # Needed for ansible_date_time
+  become: yes
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
   vars:
-    # Path for the snapshot file inside the container
-    snapshot_file_path: /tmp/final_snapshot.sql.gz
+    snapshot_file_path: /mnt/master-transfer-disk/final_snapshot.sql.gz
+    transfer_disk_name: master-transfer-disk
 
   tasks:
     - name: Ensure MariaDB container is running
@@ -116,37 +200,17 @@
       changed_when: false
       failed_when: mysql_process_check.rc != 0
 
-    - name: Create replication user on master
-      ansible.builtin.shell: >
-        docker exec mysql mysql -uroot -e "
-        CREATE USER IF NOT EXISTS '{{ db_repl_user }}'@'%' IDENTIFIED BY '{{ db_repl_password }}';
-        GRANT REPLICATION SLAVE, RELOAD, PROCESS ON *.* TO '{{ db_repl_user }}'@'%';"
-      register: create_repl_user
-      changed_when: create_repl_user.rc == 0
+    - name: Ensure transfer disk mount point exists
+      ansible.builtin.file:
+        path: /mnt/master-transfer-disk
+        state: directory
 
-    - name: Remove existing maxscale_user grants
-      ansible.builtin.shell: >
-        docker exec mysql mysql -uroot -e "
-        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
-      register: revoke_grants
-      changed_when: revoke_grants.rc == 0
-      ignore_errors: true  # Ignore errors if the user does not exist
-
-    - name: Create or update maxscale_user on all replicas
-      ansible.builtin.shell: >
-        docker exec mysql mysql -uroot -e "
-        CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY 'maxscale_password';
-        GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';"
-      register: create_maxscale_user
-      changed_when: create_maxscale_user.rc == 0
-
-    - name: Create Laravel user on master
-      ansible.builtin.shell: >
-        docker exec mysql mysql -uroot -e "
-        CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY 'laravel';
-        GRANT ALL PRIVILEGES ON *.* TO 'laravel'@'%';"
-      register: create_laravel_user
-      changed_when: create_laravel_user.rc == 0
+    - name: Mount transfer disk
+      ansible.builtin.mount:
+        path: /mnt/master-transfer-disk
+        src: /dev/disk/by-id/google-master-transfer-disk
+        fstype: ext4
+        state: mounted
 
     - name: Get master's GTID state
       ansible.builtin.shell: >
@@ -158,26 +222,35 @@
       ansible.builtin.debug:
         msg: "Master's GTID state: {{ master_gtid_state.stdout }}"
 
-    - name: Save master's GTID state to a file
-      ansible.builtin.copy:
-        content: "{{ master_gtid_state.stdout }}"
-        dest: "/tmp/master_gtid_state.txt" # Path on the Ansible controller
+    - name: Save master's GTID state to a file on the attached disk
+      ansible.builtin.shell: |
+        echo "{{ master_gtid_state.stdout }}" > /mnt/master-transfer-disk/master_gtid_state.txt
+      args:
+        executable: /bin/bash
 
-    - name: Create database snapshot on master
+    - name: Create database snapshot on master (save to attached disk)
       ansible.builtin.shell: >
-        docker exec mysql mariadb-dump --all-databases --ignore-database=mysql --master-data=2 --single-transaction --events --routines \
-        -uroot | gzip > /tmp/final_snapshot.sql.gz
+        docker exec mysql mariadb-dump --all-databases --ignore-database=mysql --master-data=2 --single-transaction --events --routines -uroot | gzip > /mnt/master-transfer-disk/final_snapshot.sql.gz
       register: snapshot_result
       changed_when: snapshot_result.rc == 0
       #no_log: true # Avoid logging password
 
-    - name: Stream snapshot directly to replicas
-      ansible.builtin.shell: >
-        cat /tmp/final_snapshot.sql.gz | ssh {{ item }} "cat > {{ snapshot_file_path }}"
-      delegate_to: "{{ groups['mariadb_master'][0] }}" # Run this task on the master
-      with_items: "{{ groups['mariadb_replica'] }}" # Loop over all replica hosts
+    - name: Create GCP disk snapshot
+      google.cloud.gcp_compute_snapshot:
+        name: "master-transfer-disk-snapshot-{{ ansible_date_time.iso8601 }}"
+        source_disk: "{{ transfer_disk_name }}"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        state: present
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+      delegate_to: localhost
 
-    - name: Remove dump file from master (optional cleanup)
-      ansible.builtin.command: rm -f /tmp/final_snapshot.sql.gz
-      register: cleanup_result
-      changed_when: cleanup_result.rc == 0
+    - name: Remove dump and GTID state files from attached disk
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /mnt/master-transfer-disk/final_snapshot.sql.gz
+        - /mnt/master-transfer-disk/master_gtid_state.txt
+

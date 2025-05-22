@@ -1,13 +1,18 @@
 ---
 # Playbook to configure a MariaDB VM for replication using GCP.
 # =============================================================================
-# Set the replica name here or pass it via --extra-vars "replica_name=replica2"
+# Set the replica name on the gcp.yml file use the replica_name variable new name 
+# for new replica existing name for idempotency and remediation
 # =============================================================================
 - name: Ensure the VM exists
   hosts: localhost
   gather_facts: false
+ 
   vars_files:
     - /etc/ansible/group_vars/gcp.yml
+  vars:
+    mariadb_container_name: "mdb-{{ replica_name }}"
+      
   tasks:
     - name: Ensure the VM exists (create if needed)
       google.cloud.gcp_compute_instance:
@@ -44,11 +49,13 @@
         state: present        
       register: vm_instance
       
-    - name: Add new vm to inventory.ini using Tailscale hostname
+    - name: Add or update vm entry in inventory.ini using Tailscale hostname
       ansible.builtin.lineinfile:
         path: /etc/ansible/inventory.ini
         insertbefore: '^\[mariadb:children\]'
-        line: "{{ replica_name }} ansible_host={{ replica_name }} ansible_user=root replica_server_id={{ server_id }}"
+        regexp: "^{{ replica_name }}\\s"
+        line: "{{ replica_name }} ansible_host={{ replica_name }} ansible_user=root replica_server_id={{ server_id }}" 
+        state: present
 
     - name: Add new VM to in-memory inventory using Tailscale hostname
       add_host:
@@ -97,6 +104,17 @@
           - apparmor
           - apparmor-utils
         state: present
+    
+    - name: Ensure Docker is installed
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker Python SDK is installed
+      ansible.builtin.pip:
+        name: docker
+        state: present    
 
         
 #    - name: Reload AppArmor to apply changes
@@ -115,9 +133,6 @@
   vars:
     mariadb_version: "10.4.33"
     mariadb_image: "mariadb:10.4.33"
-    mariadb_data_dir: "/srv/mariadb_data"
-    mariadb_config_dir: "/opt/mariadb_config"
-    mariadb_custom_cnf: "/opt/mariadb_config/custom.cnf"
     mariadb_container_name: "mdb-{{ replica_name }}"
     mariadb_root_password: "{{ vault_db_root_password }}"
     # Tuning variables (override as needed)
@@ -134,16 +149,6 @@
     query_cache_type: "OFF"
     query_cache_size: 0
   tasks:
-    - name: Ensure Docker is installed
-      ansible.builtin.apt:
-        name: docker.io
-        state: present
-        update_cache: yes
-
-    - name: Ensure Docker Python SDK is installed
-      ansible.builtin.pip:
-        name: docker
-        state: present
 
     - name: Create MariaDB data directory
       ansible.builtin.file:

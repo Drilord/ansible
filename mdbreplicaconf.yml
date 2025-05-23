@@ -12,18 +12,24 @@
 
   vars:
     transfer_disk_name: master-transfer-disk
-    disk_prefix: trasferdisk
+    disk_prefix: transferdisk
     disk_size_gb: 60
     disk_type: pd-ssd
     mount_point: /mnt/mariadb-transfer
+  tags:
+    - play0
 
   tasks:
     - name: Find latest snapshot of master-transfer-disk
       google.cloud.gcp_compute_snapshot_info:
-        project: "{{ gcp_project }}"
+        project: "{{ gcp_project_name }}"
         auth_kind: serviceaccount
         service_account_file: "{{ gcp_service_account_file }}"
       register: gcp_snapshots
+
+    - name: Debug List all candidate snapshots for {{ transfer_disk_name }}
+      debug:
+        msg: "{{ gcp_snapshots.resources | selectattr('sourceDisk', 'search', transfer_disk_name + '$') | map(attribute='name') | list }}"
 
     - name: Set latest snapshot name for master-transfer-disk
       set_fact:
@@ -33,44 +39,80 @@
               gcp_snapshots.resources
               | selectattr('sourceDisk', 'search', transfer_disk_name + '$')
               | sort(attribute='creationTimestamp', reverse=true)
+              | map(attribute='name')
               | list
-            )[0].name
+            )[0] | default('')
           }}
       when: gcp_snapshots.resources | length > 0
 
-    - name: Create disk from latest snapshot in replica zone
-      google.cloud.gcp_compute_disk:
-        name: "{{ disk_prefix }}-{{ replica_name }}"
-        zone: "{{ replica_zone }}"
-        project: "{{ gcp_project }}"
-        source_snapshot: "{{ latest_snapshot }}"
-        size_gb: "{{ disk_size_gb }}"
-        type: "{{ disk_type }}"
-        auth_kind: serviceaccount
-        service_account_file: "{{ gcp_service_account_file }}"
-        state: present
-      delegate_to: localhost
+    - name: Debug Show latest snapshot selected
+      debug:
+        msg: "Using snapshot {{ latest_snapshot }} for replica disk"
+
+    - name: Fail if no snapshot was found
+      ansible.builtin.fail:
+        msg: "No valid snapshot found for {{ transfer_disk_name }}. Aborting to avoid creating a blank disk!"
+      when: latest_snapshot is not defined or latest_snapshot == ""
+
+    - name: Check if replica disk exists
+      ansible.builtin.command: >
+        /google-cloud-sdk/bin/gcloud compute disks describe {{ disk_prefix }}-{{ replica_name }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project_name }}
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      register: disk_exists
+      ignore_errors: true
+
+    - name: Create disk from latest snapshot in replica zone (gcloud CLI)
+      ansible.builtin.command: >
+        /google-cloud-sdk/bin/gcloud compute disks create {{ disk_prefix }}-{{ replica_name }}
+        --project={{ gcp_project_name }}
+        --type={{ disk_type }}
+        --size={{ disk_size_gb }}GB
+        --zone={{ replica_zone }}
+        --source-snapshot=projects/{{ gcp_project_name }}/global/snapshots/{{ latest_snapshot }}
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      when: disk_exists.rc != 0
+      register: create_disk_result
 
     - name: Attach disk to replica (using gcloud CLI)
       ansible.builtin.command: >
-        gcloud compute instances attach-disk {{ replica_name }}
+        /google-cloud-sdk/bin/gcloud compute instances attach-disk {{ replica_name }}-{{ replica_zone }}
         --disk={{ disk_prefix }}-{{ replica_name }}
+        --device-name={{ disk_prefix }}-{{ replica_name }}
         --zone={{ replica_zone }}
-        --project={{ gcp_project }}
+        --project={{ gcp_project_name }}
         --quiet
       environment:
         CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
       register: attach_disk_result
       changed_when: "'attached' in attach_disk_result.stdout or attach_disk_result.rc == 0"
-      failed_when: attach_disk_result.rc != 0 and 'already attached' not in attach_disk_result.stderr
-      delegate_to: localhost
+      failed_when: >
+        attach_disk_result.rc != 0 and
+        ('already attached' not in attach_disk_result.stderr and
+         'is already attached' not in attach_disk_result.stderr and
+         'is already being used by' not in attach_disk_result.stderr)
 
-    # Optionally, mount the disk on the replica host
-    - name: Wait for disk device to appear on replica
-      ansible.builtin.wait_for:
-        path: /dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }}
-        timeout: 60
+    - name: Check for disk device on replica (retry up to 3 times)
+      ansible.builtin.shell: |
+        if [ -e /dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }} ]; then
+          echo "FOUND"
+        else
+          echo "NOT FOUND"
+        fi
+      register: disk_check
+      retries: 3
+      delay: 5
+      until: disk_check.stdout.find("FOUND") != -1
       delegate_to: "{{ replica_name }}"
+      failed_when: disk_check.stdout.find("FOUND") == -1
+
+    - name: Fail if disk device did not appear after retries
+      ansible.builtin.fail:
+        msg: "Disk device /dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }} did not appear after 3 attempts. Aborting."
+      when: disk_check.stdout.find("FOUND") == -1
 
     - name: Create mount point on replica
       ansible.builtin.file:
@@ -92,27 +134,29 @@
 - name: Ensure Replication is running or Configure Replica
   hosts:  "{{ replica_name }}"
   gather_facts: no
-  become: yes # Use root privileges if needed
-
-
+  become: yes
+  
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+    
   vars:
-    # Ensure MariaDB service name matches your container setup
-    mariadb_service_name: mariadb # or mysql
-    gtid_domain_id: 1 # GTID domain ID matching the master
-    # Ensure MariaDB data directory path matches your container setup
+    mariadb_service_name: mariadb
+    gtid_domain_id: 1
     mariadb_data_dir: /var/lib/mysql
-    # Path for the dump file on the replica
-    dump_file_path: /tmp/final_snapshot.sql.gz
+    dump_file_path: /mnt/mariadb-transfer/final_snapshot.sql.gz
+    gtid_state_file: /mnt/mariadb-transfer/master_gtid_state.txt
     mariadb_container_name: "mdb-{{ replica_name }}"
-
-  tasks: 
+  tags:
+    - play1
+  tasks:
 
     - name: Check replication status
       ansible.builtin.command: >
-        mysql -u root -Be "SHOW SLAVE STATUS\G"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -Be "SHOW SLAVE STATUS\G"
       register: slave_status
       changed_when: false
-      failed_when: false  # Do not fail if replication is not set
+      failed_when: false
       retries: 2
       delay: 3
 
@@ -124,36 +168,34 @@
 
     - name: Remove existing maxscale_user grants
       ansible.builtin.shell: >
-        mysql -uroot -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
       register: revoke_grants
       changed_when: revoke_grants.rc == 0
-      ignore_errors: true  # Ignore errors if the user does not exist
+      ignore_errors: true
 
-    - name: Create or update maxscale_user on all replicas
-      community.mysql.mysql_user:
-        login_user: root
-        login_password: "{{ db_root_password }}"
-        name: maxscale_user
-        password: "maxscale_password"
-        host: '%'
-        priv: '*.*:REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE'
-        state: present
-        update_password: always
+    - name: Create or update maxscale_user on replica
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
+          CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
+          ALTER USER 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
+          GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';
+          FLUSH PRIVILEGES;"
+      register: maxscale_user_result
+      changed_when: maxscale_user_result.rc == 0
 
-    - name: Create Laravel user on replicas
-      community.mysql.mysql_user:
-        login_user: root
-        login_password: "{{ db_root_password }}"
-        name: laravel
-        password: laravel
-        host: '%'
-        priv: '*.*:ALL'
-        state: present
-        update_password: always    
+    - name: Create or update laravel user on replica
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
+          CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
+          ALTER USER 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
+          GRANT ALL ON *.* TO 'laravel'@'%';
+          FLUSH PRIVILEGES;"
+      register: laravel_user_result
+      changed_when: laravel_user_result.rc == 0
 
     - name: Drop all non-system databases on replica
-      ansible.builtin.command: >
-        mysql -uroot -e "
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
         SET GLOBAL FOREIGN_KEY_CHECKS = 0;
         SELECT CONCAT('DROP DATABASE `', schema_name, '`;')
         FROM information_schema.schemata
@@ -164,7 +206,7 @@
 
     - name: Configure MariaDB replica settings (my.cnf)
       ansible.builtin.blockinfile:
-        path: /etc/mysql/my.cnf # Adjust path if different
+        path: /etc/mysql/my.cnf
         block: |
           [mysqld]
           server_id={{ replica_server_id }}
@@ -181,42 +223,31 @@
           innodb_doublewrite=0
           innodb_flush_log_at_trx_commit=0
         marker: "# {mark} ANSIBLE MANAGED BLOCK - REPLICA SETTINGS"
-        create: yes # Create file if it doesn't exist (adjust if needed)
+        create: yes
 
     - name: Restart MariaDB container
       ansible.builtin.shell: >
-        docker restart "{{ hostvars[inventory_hostname]['replica_container_name'] }}"    
+        docker restart "{{ mariadb_container_name }}"
       register: restart_result
       changed_when: restart_result.rc == 0
-      delegate_to: localhost
 
-    - name: Display restart result
-      ansible.builtin.debug:
-        var: restart_result.stdout
-      delegate_to: localhost
-
-    - name: Debug MariaDB configuration file (new variables only)
+    - name: Set innodb_buffer_pool_size to 1G for restore
       ansible.builtin.shell: >
-        grep -E "server_id|log_bin|relay_log|binlog_format|log_slave_updates|read_only|gtid_domain_id|gtid_strict_mode|report_host|report_port|innodb_buffer_pool_size|innodb_doublewrite|innodb_flush_log_at_trx_commit" /etc/mysql/my.cnf
-      register: mycnf_new_variables
-      changed_when: false
-
-    - name: Display new MariaDB configuration variables
-      ansible.builtin.debug:
-        var: mycnf_new_variables.stdout
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL innodb_buffer_pool_size=1073741824;"
+      register: set_buffer_pool_restore
+      changed_when: set_buffer_pool_restore.rc == 0
 
     - name: Restore database dump on replica
       ansible.builtin.shell: >
-        gunzip < {{ dump_file_path }} | mysql -uroot
+        docker exec -i {{ mariadb_container_name }} sh -c 'gunzip | mysql -uroot -p'{{ replica_root_pwd }}'' < {{ dump_file_path }}
       register: restore_result
       changed_when: restore_result.rc == 0
-     # no_log: true # Avoid logging password
 
-    - name: Remove dump file from all replicas (optional cleanup)
-      ansible.builtin.file:
-        path: "{{ dump_file_path }}"
-        state: absent
-
+    - name: Set innodb_buffer_pool_size back to 10G after restore
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL innodb_buffer_pool_size=10737418240;"
+      register: set_buffer_pool_normal
+      changed_when: set_buffer_pool_normal.rc == 0
 
     - name: Wait for MariaDB port (3306) on replica
       ansible.builtin.wait_for:
@@ -227,25 +258,25 @@
 
     - name: Stop replication on all replicas
       ansible.builtin.shell: >
-        mysql -uroot -e "STOP SLAVE;"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "STOP SLAVE;"
       register: stop_slave
       changed_when: stop_slave.rc == 0
 
     - name: Reset replication state on all replicas
       ansible.builtin.shell: >
-        mysql -uroot -e "RESET SLAVE ALL;"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "RESET SLAVE ALL;"
       register: reset_slave
       changed_when: reset_slave.rc == 0
 
     - name: Reset binary logs on all replicas (if binary logs exist)
       ansible.builtin.shell: >
-        mysql -uroot -e "RESET MASTER;"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "RESET MASTER;"
       register: reset_master
-      changed_when: reset_master.rc == 0    
+      changed_when: reset_master.rc == 0
 
     - name: Read master's GTID state from file
       ansible.builtin.slurp:
-        src: "/tmp/master_gtid_state.txt" # Path on the Ansible controller
+        src: "{{ gtid_state_file }}"
       register: gtid_state_file
 
     - name: Decode master's GTID state
@@ -254,13 +285,13 @@
 
     - name: Set replica's GTID state
       ansible.builtin.shell: >
-        mysql -uroot -e "SET GLOBAL gtid_slave_pos='{{ master_gtid_state }}';"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL gtid_slave_pos='{{ master_gtid_state }}';"
       register: set_gtid_state
       changed_when: set_gtid_state.rc == 0
 
     - name: Configure replication connection on replica
       ansible.builtin.shell: >
-        mysql -uroot -e "
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
         CHANGE MASTER TO
           MASTER_HOST='{{ hostvars[groups['mariadb_master'][0]]['ansible_host'] | default(groups['mariadb_master'][0]) }}',
           MASTER_USER='{{ db_repl_user }}',
@@ -271,13 +302,13 @@
 
     - name: Start replication threads on replica
       ansible.builtin.shell: >
-        mysql -uroot -e "START SLAVE;"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "START SLAVE;"
       register: start_replication
       changed_when: start_replication.rc == 0
 
     - name: Check replication status
       ansible.builtin.command: >
-        mysql -u root -Be "SHOW SLAVE STATUS\G"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -Be "SHOW SLAVE STATUS\G"
       register: slave_status
       changed_when: false
       failed_when: >
@@ -297,11 +328,51 @@
 
     - name: Check Docker container status
       ansible.builtin.docker_container_info:
-        name: "{{ inventory_hostname }}"
+        name: "{{ mariadb_container_name }}"
       register: container_status
-      delegate_to: localhost
 
     - name: Display Docker container status
       ansible.builtin.debug:
         var: container_status
-      delegate_to: localhost
+
+# =============================================================================
+# Play 2: Configure the new replica server in MaxScale (on master)
+# =============================================================================
+- name: Configure new replica in MaxScale
+  hosts: mariadb_master
+  gather_facts: no
+  become: yes
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    maxscale_container_name: us-south1a-clone-maxscale-1
+    replica_server_id: "{{ hostvars[replica_name].replica_server_id | default('2') }}"
+    replica_host: "{{ hostvars[replica_name].ansible_host }}"
+    replica_port: 3306
+    maxscale_config_path: /etc/maxscale.cnf
+  tags:
+    - play2
+  tasks:
+
+    - name: Add new replica server to MaxScale via maxctrl
+      ansible.builtin.shell: |
+        docker exec {{ maxscale_container_name }} maxctrl create server {{ replica_name }} {{ replica_host }} {{ replica_port }}
+      register: maxscale_create_server
+      changed_when: "'Created' in maxscale_create_server.stdout"
+      failed_when: >
+        maxscale_create_server.rc != 0 and
+        ('already exists' not in maxscale_create_server.stderr and
+         'already exists' not in maxscale_create_server.stdout)
+
+    - name: Add new replica server to monitor in MaxScale via maxctrl
+      ansible.builtin.shell: |
+        docker exec {{ maxscale_container_name }} maxctrl alter monitor {{ maxscale_monitor_name }} add server {{ replica_name }}
+      register: maxscale_add_to_monitor
+      changed_when: "'altered' in maxscale_add_to_monitor.stdout"
+      failed_when: >
+        maxscale_add_to_monitor.rc != 0 and
+        ('already part of monitor' not in maxscale_add_to_monitor.stderr and
+         'already part of monitor' not in maxscale_add_to_monitor.stdout)
+
+

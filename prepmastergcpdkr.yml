@@ -9,7 +9,8 @@
   hosts: master
   gather_facts: no
   become: yes # Use root privileges if needed
-
+  tags:
+    - play0
   tasks:
     - name: Check if Python 3 is installed
       raw: |
@@ -34,10 +35,10 @@
         name: python3-pip
         state: present
 
-    - name: Ensure Docker Python SDK is installed
-      ansible.builtin.pip:
-        name: docker
-        state: present   
+    - name: Ensure docker python SDK is installed (Debian/Ubuntu way)
+      ansible.builtin.apt:
+        name: python3-docker
+        state: present
 
 # =============================================================================
 # Play 1: Prepare Master (Check GTID Settings)
@@ -51,6 +52,8 @@
     # Default master server_id (adjust if different)
     master_server_id: 11
     cont_name: mysql #master in dbtest
+  tags:
+    - play1  
   tasks:
     - name: Ensure MariaDB process is running on master
       ansible.builtin.command: docker exec {{ cont_name }} pgrep mysqld
@@ -73,12 +76,14 @@
       ansible.builtin.command: >
         docker exec {{ cont_name }} mysql -u root -e "
         SET GLOBAL binlog_format = 'ROW';
-        SET GLOBAL server_id = {{ master_server_id }};
         SET GLOBAL gtid_domain_id = 1;"
+#       SET GLOBAL server_id = {{ master_server_id }};
       when: >
         gtid_check.stdout.find('binlog_format\tROW') == -1 or
         gtid_check.stdout.find('server_id\t{{ master_server_id }}') == -1 or
         gtid_check.stdout.find('gtid_domain_id\t1') == -1
+
+
 
     - name: Persist server_id in my.cnf
       ansible.builtin.shell: |
@@ -146,33 +151,51 @@
     transfer_disk_size_gb: 60
     transfer_disk_type: pd-ssd
     instance_name: clone-dbtest
+  tags:
+    - play2
 
   tasks:
     - name: Ensure GCP disk exists
       google.cloud.gcp_compute_disk:
         name: "{{ transfer_disk_name }}"
         size_gb: "{{ transfer_disk_size_gb }}"
-        zone: "{{ gcp_zone }}"
-        project: "{{ gcp_project }}"
+        zone: "{{ replica_zone }}"
+        project: "{{ gcp_project_name }}"
         type: "{{ transfer_disk_type }}"
         state: present
         auth_kind: serviceaccount
         service_account_file: "{{ gcp_service_account_file }}"
-      delegate_to: localhost
+    
+
+    - name: Get list of attached disk resource URLs
+      ansible.builtin.command: >
+        /google-cloud-sdk/bin/gcloud compute instances describe {{ instance_name }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project_name }}
+        --format="get(disks.source)"
+      register: attached_disks
+      
+
+    - name: Convert attached disks to list
+      set_fact:
+        attached_disk_list: "{{ attached_disks.stdout.split(';') }}"
 
     - name: Ensure disk is attached to master (using gcloud CLI)
-      ansible.builtin.command: >
-        gcloud compute instances attach-disk {{ instance_name }}
+      ansible.builtin.shell: >
+        /google-cloud-sdk/bin/gcloud compute instances attach-disk {{ instance_name }}
         --disk={{ transfer_disk_name }}
-        --zone={{ gcp_zone }}
-        --project={{ gcp_project }}
+        --device-name={{ transfer_disk_name }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project_name }}
         --quiet
       environment:
         CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
       register: attach_disk_result
-      changed_when: "'attached' in attach_disk_result.stdout or attach_disk_result.rc == 0"
-      failed_when: attach_disk_result.rc != 0 and 'already attached' not in attach_disk_result.stderr
-      delegate_to: localhost
+      changed_when: attach_disk_result.rc == 0
+      failed_when: attach_disk_result.rc != 0
+      when: attached_disk_list | select('search', '/disks/' + transfer_disk_name) | list | length == 0
+      
+   
 
 # =============================================================================
 # Play 3: Create Snapshot from Master and Copy to Replica
@@ -186,10 +209,12 @@
   vars:
     snapshot_file_path: /mnt/master-transfer-disk/final_snapshot.sql.gz
     transfer_disk_name: master-transfer-disk
+  tags:
+    - play3
 
   tasks:
     - name: Ensure MariaDB container is running
-      ansible.builtin.command: docker ps --filter "name=mysql" --filter "status=running" --format "{{.Names}}"
+      ansible.builtin.command: docker ps --filter name=mysql --filter status=running --format '{% raw %}{{.Names}}{% endraw %}'
       register: mysql_container_check
       changed_when: false
       failed_when: "'mysql' not in mysql_container_check.stdout"
@@ -205,52 +230,74 @@
         path: /mnt/master-transfer-disk
         state: directory
 
+    - name: Check if transfer disk is already formatted
+      ansible.builtin.command: blkid /dev/disk/by-id/google-master-transfer-disk
+      register: blkid_result
+      ignore_errors: true
+
+    - name: Format transfer disk as ext4 if needed
+      ansible.builtin.command: mkfs.ext4 -F /dev/disk/by-id/google-master-transfer-disk
+      when: blkid_result.rc != 0    
+    
     - name: Mount transfer disk
       ansible.builtin.mount:
         path: /mnt/master-transfer-disk
         src: /dev/disk/by-id/google-master-transfer-disk
         fstype: ext4
         state: mounted
-
+  
     - name: Get master's GTID state
       ansible.builtin.shell: >
         docker exec mysql mysql -uroot -e "SHOW VARIABLES LIKE 'gtid_binlog_pos';" | awk '/gtid_binlog_pos/ {print $2}'
       register: master_gtid_state
       changed_when: false
 
-    - name: Display master's GTID state
+    - name: Check if today's snapshot already exists
+      ansible.builtin.stat:
+        path: /mnt/master-transfer-disk/final_snapshot.sql.gz
+      register: snapshot_file_stat
+
+    - name: Debug snapshot file stat
       ansible.builtin.debug:
-        msg: "Master's GTID state: {{ master_gtid_state.stdout }}"
+        var: snapshot_file_stat
+
+    - name: Get snapshot file date as YYYY-MM-DD via shell
+      ansible.builtin.shell: date -d "@$(stat -c %Y /mnt/master-transfer-disk/final_snapshot.sql.gz)" +%Y-%m-%d
+      register: snapshot_file_date_shell
+      changed_when: false
+      failed_when: false
+
+    - name: Set snapshot file date (shell)
+      set_fact:
+        snapshot_file_date: "{{ snapshot_file_date_shell.stdout }}"
 
     - name: Save master's GTID state to a file on the attached disk
       ansible.builtin.shell: |
         echo "{{ master_gtid_state.stdout }}" > /mnt/master-transfer-disk/master_gtid_state.txt
       args:
         executable: /bin/bash
+      when: not snapshot_file_stat.stat.exists or snapshot_file_date != ansible_date_time.date
 
     - name: Create database snapshot on master (save to attached disk)
       ansible.builtin.shell: >
         docker exec mysql mariadb-dump --all-databases --ignore-database=mysql --master-data=2 --single-transaction --events --routines -uroot | gzip > /mnt/master-transfer-disk/final_snapshot.sql.gz
       register: snapshot_result
       changed_when: snapshot_result.rc == 0
-      #no_log: true # Avoid logging password
+      when: not snapshot_file_stat.stat.exists or snapshot_file_date != ansible_date_time.date
 
     - name: Create GCP disk snapshot
       google.cloud.gcp_compute_snapshot:
-        name: "master-transfer-disk-snapshot-{{ ansible_date_time.iso8601 }}"
-        source_disk: "{{ transfer_disk_name }}"
-        zone: "{{ gcp_zone }}"
-        project: "{{ gcp_project }}"
+        name: "master-transfer-disk-snapshot-{{ ansible_date_time.date }}-{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}"
+        source_disk:
+          name: "{{ transfer_disk_name }}"
+          zone: "{{ replica_zone }}"
+          project: "{{ gcp_project_name }}"
+        zone: "{{ replica_zone }}"
+        project: "{{ gcp_project_name }}"
         state: present
         auth_kind: serviceaccount
         service_account_file: "{{ gcp_service_account_file }}"
       delegate_to: localhost
 
-    - name: Remove dump and GTID state files from attached disk
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /mnt/master-transfer-disk/final_snapshot.sql.gz
-        - /mnt/master-transfer-disk/master_gtid_state.txt
+
 

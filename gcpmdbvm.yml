@@ -1,6 +1,7 @@
 ---
 # Playbook to configure a MariaDB VM for replication using GCP.
 # =============================================================================
+# Play 0: Ensure the VM exists
 # Set the replica name on the gcp.yml file use the replica_name variable new name 
 # for new replica existing name for idempotency and remediation
 # =============================================================================
@@ -12,7 +13,8 @@
     - /etc/ansible/group_vars/gcp.yml
   vars:
     mariadb_container_name: "mdb-{{ replica_name }}"
-      
+  tags:
+    - play0    
   tasks:
     - name: Ensure the VM exists (create if needed)
       google.cloud.gcp_compute_instance:
@@ -43,7 +45,7 @@
             #!/bin/bash
             if [ ! -f /var/log/tailscale-installed ]; then
               curl -fsSL https://tailscale.com/install.sh | sh
-              tailscale up --authkey={{ tailscale_auth_key }} --ssh --hostname={{ replica_name }}
+              tailscale up --authkey={{ tailscale_auth_key }} --ssh --hostname={{ replica_name }}-mdb
               touch /var/log/tailscale-installed
             fi
         state: present        
@@ -54,13 +56,13 @@
         path: /etc/ansible/inventory.ini
         insertbefore: '^\[mariadb:children\]'
         regexp: "^{{ replica_name }}\\s"
-        line: "{{ replica_name }} ansible_host={{ replica_name }} ansible_user=root replica_server_id={{ server_id }}" 
+        line: "{{ replica_name }} ansible_host={{ replica_name }}-mdb ansible_user=root replica_server_id={{ server_id }}" 
         state: present
 
     - name: Add new VM to in-memory inventory using Tailscale hostname
       add_host:
         name: "{{ replica_name }}"
-        ansible_host: "{{ replica_name }}"
+        ansible_host: "{{ replica_name }}-mdb"
         ansible_user: root
         replica_server_id: "{{ server_id }}"
 
@@ -76,6 +78,8 @@
   vars:
     user : root # change to ansible user for prod 
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+  tags:
+    - play1  
   tasks:
     - name: Gather installed package facts
       ansible.builtin.package_facts:
@@ -112,9 +116,9 @@
         update_cache: yes
 
     - name: Ensure Docker Python SDK is installed
-      ansible.builtin.pip:
-        name: docker
-        state: present    
+      ansible.builtin.apt:
+        name: python3-docker
+        state: present
 
         
 #    - name: Reload AppArmor to apply changes
@@ -130,11 +134,12 @@
   gather_facts: false
   vars_files:
     - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
   vars:
     mariadb_version: "10.4.33"
     mariadb_image: "mariadb:10.4.33"
     mariadb_container_name: "mdb-{{ replica_name }}"
-    mariadb_root_password: "{{ vault_db_root_password }}"
+    mariadb_root_password: "{{ replica_root_pwd }}"
     # Tuning variables (override as needed)
     innodb_buffer_pool_size: "12G"
     innodb_log_file_size: "1G"
@@ -148,6 +153,8 @@
     max_heap_table_size: "128M"
     query_cache_type: "OFF"
     query_cache_size: 0
+  tags:
+    - play2  
   tasks:
 
     - name: Create MariaDB data directory
@@ -193,5 +200,7 @@
           MARIADB_ROOT_PASSWORD: "{{ mariadb_root_password }}"
         memory: "12g"
         cpus: 4
+        published_ports:
+          - "3306:3306"
 
 

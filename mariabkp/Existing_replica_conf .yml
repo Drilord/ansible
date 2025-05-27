@@ -1,0 +1,222 @@
+---
+# Playbook to configure an existing  MariaDB replica.
+# the point of this is idempotency, so if something is messed up, we can run this playbook again to fix it.
+
+# =============================================================================
+# Play 1: Configure Replica
+# =============================================================================
+- name: Ensure Replication is running or Configure Replica
+  hosts:  "" #replace with the existing replica host name 
+  gather_facts: no
+  become: yes
+  
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+    
+  vars:
+    replica_server_id: "{{ server_id }}" #ensure using a unique server_id for each replica 
+    mariadb_service_name: mariadb
+    gtid_domain_id: 1
+    mariadb_data_dir: /var/lib/mysql
+    gtid_state_file: /mnt/mdbdisk/master_gtid_state.txt
+    mariadb_container_name: "mdb-{{ replica_name }}"
+  tags:
+    - play1
+  tasks:
+
+    - name: Check replication status
+      ansible.builtin.command: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: false
+      retries: 2
+      delay: 3
+
+    - name: Skip remaining tasks if replication is running
+      ansible.builtin.meta: end_host
+      when: >
+        'Slave_IO_Running: Yes' in slave_status.stdout and
+        'Slave_SQL_Running: Yes' in slave_status.stdout
+
+    - name: Remove existing maxscale_user grants
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
+      register: revoke_grantsmx
+      changed_when: revoke_grantsmx.rc == 0
+      ignore_errors: true
+
+    - name: Create or update maxscale_user on replica
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
+          CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
+          ALTER USER 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
+          GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';
+          FLUSH PRIVILEGES;"
+      register: maxscale_user_result
+      changed_when: maxscale_user_result.rc == 0
+
+    - name: Remove existing laravel user grants
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'laravel'@'%';"
+      register: revoke_grantslrvl
+      changed_when: revoke_grantslrvl.rc == 0
+      ignore_errors: true
+
+    - name: Create or update laravel user on replica
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
+          CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
+          ALTER USER 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
+          GRANT ALL ON *.* TO 'laravel'@'%';
+          FLUSH PRIVILEGES;"
+      register: laravel_user_result
+      changed_when: laravel_user_result.rc == 0
+
+    - name: Render my_custom.cnf from template
+      ansible.builtin.template:
+        src: my_custom.cnf.j2
+        dest: /tmp/my_custom.cnf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Copy my_custom.cnf into container
+      ansible.builtin.shell: |
+        docker cp /tmp/my_custom.cnf {{ mariadb_container_name }}:/etc/mysql/conf.d/my_custom.cnf
+      register: copy_mycnf
+      changed_when: copy_mycnf.rc == 0
+
+    - name: Restart MariaDB container apply config
+      ansible.builtin.shell: >
+        docker restart "{{ mariadb_container_name }}"
+      register: restart_result
+      changed_when: restart_result.rc == 0
+
+    # Wait for MariaDB to be ready inside the container
+    - name: Wait for MariaDB to be ready after restart
+      ansible.builtin.shell: |
+        docker exec {{ mariadb_container_name }} bash -c 'until mysqladmin ping -uroot -p"{{ replica_root_pwd }}" --silent; do sleep 2; done'
+      register: wait_for_mysql
+      retries: 5
+      delay: 3
+      until: wait_for_mysql.rc == 0
+
+    - name: Wait for MariaDB port (3306) on replica
+      ansible.builtin.wait_for:
+        port: 3306
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        timeout: 60
+        delay: 5
+
+    - name: Stop replication on replica
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "STOP SLAVE;"
+      register: stop_slave
+      changed_when: stop_slave.rc == 0
+
+    - name: Reset replication state on all replicas
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "RESET SLAVE ALL;"
+      register: reset_slave
+      changed_when: reset_slave.rc == 0
+
+    - name: Reset binary logs on replica (if binary logs exist)
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "RESET MASTER;"
+      register: reset_master
+      changed_when: reset_master.rc == 0
+
+    - name: Set replica's GTID state
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL gtid_slave_pos='{{ master_gtid_state | trim }}';"
+      register: set_gtid_state
+      changed_when: set_gtid_state.rc == 0
+
+    - name: Configure replication connection on replica
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
+        CHANGE MASTER TO
+          MASTER_HOST='{{ master_hostname }}',
+          MASTER_USER='{{ db_repl_user }}',
+          MASTER_PASSWORD='{{ db_repl_password }}',
+          MASTER_USE_GTID=slave_pos;"
+      register: configure_replication
+      changed_when: configure_replication.rc == 0
+
+    - name: Start replication threads on replica
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "START SLAVE;"
+      register: start_replication
+      changed_when: start_replication.rc == 0
+
+    - name: Check replication status
+      ansible.builtin.command: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: >
+        'Slave_IO_Running: Yes' not in slave_status.stdout or
+        'Slave_SQL_Running: Yes' not in slave_status.stdout
+      retries: 5
+      delay: 10
+
+    - name: Display final replication status
+      ansible.builtin.debug:
+        msg:
+          - "Replication IO Thread Running: {{ slave_status.stdout | regex_search('Slave_IO_Running: (\\w+)', '\\1') | first }}"
+          - "Replication SQL Thread Running: {{ slave_status.stdout | regex_search('Slave_SQL_Running: (\\w+)', '\\1') | first }}"
+          - "Seconds Behind Master: {{ slave_status.stdout | regex_search('Seconds_Behind_Master: (\\d+)', '\\1') | first }}"
+          - "Last IO Error: {{ slave_status.stdout | regex_search('Last_IO_Error: (.*)', '\\1') | first }}"
+          - "Last SQL Error: {{ slave_status.stdout | regex_search('Last_SQL_Error: (.*)', '\\1') | first }}"
+
+    - name: Check Docker container status
+      ansible.builtin.docker_container_info:
+        name: "{{ mariadb_container_name }}"
+      register: container_status
+
+    - name: Display Docker container status
+      ansible.builtin.debug:
+        var: container_status
+
+# =============================================================================
+# Play 2: Configure the new replica server in MaxScale (on master)
+# =============================================================================
+- name: Configure new replica in MaxScale
+  hosts: mariadb_master
+  gather_facts: no
+  become: yes
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    maxscale_container_name: "{{ maxscale_cont_nm }}"
+    replica_host: "{{ hostvars[replica_name].ansible_host }}"
+    replica_port: 3306
+    maxscale_config_path: /etc/maxscale.cnf
+  tags:
+    - play2
+  tasks:
+
+    - name: Add new replica server to MaxScale via maxctrl 
+      ansible.builtin.shell: |
+        docker exec {{ maxscale_container_name }} maxctrl create server {{ replica_name }} {{ replica_host }} {{ replica_port }} 
+      register: maxscale_create_server
+      changed_when: "'Created' in maxscale_create_server.stdout"
+      failed_when: >
+        maxscale_create_server.rc != 0 and
+        ('already exists' not in maxscale_create_server.stderr and
+         'already exists' not in maxscale_create_server.stdout)
+
+    - name: Link new replica server to monitor in MaxScale via maxctrl 
+      ansible.builtin.shell: |
+        docker exec {{ maxscale_container_name }} maxctrl link monitor {{ maxscale_monitor_name }} {{ replica_name }}
+      register: maxscale_link_to_monitor
+      changed_when: "'linked' in maxscale_link_to_monitor.stdout"
+      failed_when: >
+        maxscale_link_to_monitor.rc != 0 and
+        ('already linked' not in maxscale_link_to_monitor.stderr and
+         'already linked' not in maxscale_link_to_monitor.stdout)
+
+

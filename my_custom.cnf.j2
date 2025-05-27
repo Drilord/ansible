@@ -1,6 +1,6 @@
 [mysqld]
 log_bin=/var/log/mysql/mysql-bin.log
-server_id={{ server_id | default(22) }}
+server_id={{ server_id }}
 expire_logs_days=60
 binlog_format=ROW
 binlog_do_db= #specify database 
@@ -23,3 +23,13 @@ tmp_table_size={{ tmp_table_size | default('128M') }}
 max_heap_table_size={{ max_heap_table_size | default('128M') }}
 query_cache_type={{ query_cache_type | default('OFF') }}
 query_cache_size={{ query_cache_size | default('0') }}
+
+# BEGIN ANSIBLE MANAGED BLOCK - REPLICA SETTINGS
+relay_log=mysql-relay-bin
+read_only=ON
+gtid_domain_id={{ gtid_domain_id | default('1') }}
+gtid_strict_mode=ON
+# next 2 lines increase performance but risk dataloss on failure 
+# innodb_doublewrite=0
+# innodb_flush_log_at_trx_commit=0
+# END ANSIBLE MANAGED BLOCK - REPLICA SETTINGS

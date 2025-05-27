@@ -141,6 +141,7 @@
     - /etc/ansible/group_vars/mariadb.yml
     
   vars:
+    replica_server_id: "{{ server_id }}"
     mariadb_service_name: mariadb
     gtid_domain_id: 1
     mariadb_data_dir: /var/lib/mysql
@@ -193,16 +194,19 @@
       register: laravel_user_result
       changed_when: laravel_user_result.rc == 0
 
-    - name: Drop all non-system databases on replica
+    - name: Get drop statements for all non-system databases
       ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
-        SET GLOBAL FOREIGN_KEY_CHECKS = 0;
-        SELECT CONCAT('DROP DATABASE `', schema_name, '`;')
-        FROM information_schema.schemata
-        WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');
-        SET GLOBAL FOREIGN_KEY_CHECKS = 1;"
-      register: drop_databases
-      changed_when: drop_databases.rc == 0
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -N -e "
+          SELECT CONCAT('DROP DATABASE `', schema_name, '`;')
+          FROM information_schema.schemata
+          WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');"
+      register: drop_db_statements
+
+    - name: Drop all non-system databases on replica (safe loop)
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "{{ item }}"
+      loop: "{{ drop_db_statements.stdout_lines }}"
+      when: item | trim != "" and item != "DROP DATABASE ;"
 
     - name: Configure MariaDB replica settings (my.cnf)
       ansible.builtin.blockinfile:
@@ -231,17 +235,40 @@
       register: restart_result
       changed_when: restart_result.rc == 0
 
-    - name: Set innodb_buffer_pool_size to 1G for restore
+    # Wait for MariaDB to be ready inside the container
+    - name: Wait for MariaDB to be ready after restart
+      ansible.builtin.shell: |
+        docker exec {{ mariadb_container_name }} bash -c 'until mysqladmin ping -uroot -p"{{ replica_root_pwd }}" --silent; do sleep 2; done'
+      register: wait_for_mysql
+      retries: 5
+      delay: 3
+      until: wait_for_mysql.rc == 0
+
+    - name: Skip restore if marker exists
+      ansible.builtin.stat:
+        path: /srv/mariadb_data/.restore_complete
+      register: restore_marker
+
+    - name: Set innodb_buffer_pool_size to 4G for restore
       ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL innodb_buffer_pool_size=1073741824;"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL innodb_buffer_pool_size=4294967296;"
       register: set_buffer_pool_restore
       changed_when: set_buffer_pool_restore.rc == 0
+      when: not restore_marker.stat.exists
 
     - name: Restore database dump on replica
       ansible.builtin.shell: >
         docker exec -i {{ mariadb_container_name }} sh -c 'gunzip | mysql -uroot -p'{{ replica_root_pwd }}'' < {{ dump_file_path }}
       register: restore_result
       changed_when: restore_result.rc == 0
+      when: not restore_marker.stat.exists
+
+    - name: Create restore marker file
+      ansible.builtin.file:
+        path: /srv/mariadb_data/.restore_complete
+        state: touch
+      delegate_to: "{{ inventory_hostname }}"
+      when: (restore_result.rc | default(-1)) == 0 and not restore_marker.stat.exists
 
     - name: Set innodb_buffer_pool_size back to 10G after restore
       ansible.builtin.shell: >
@@ -256,7 +283,7 @@
         timeout: 60
         delay: 5
 
-    - name: Stop replication on all replicas
+    - name: Stop replication on replica
       ansible.builtin.shell: >
         docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "STOP SLAVE;"
       register: stop_slave
@@ -268,7 +295,7 @@
       register: reset_slave
       changed_when: reset_slave.rc == 0
 
-    - name: Reset binary logs on all replicas (if binary logs exist)
+    - name: Reset binary logs on replica (if binary logs exist)
       ansible.builtin.shell: >
         docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "RESET MASTER;"
       register: reset_master
@@ -285,7 +312,7 @@
 
     - name: Set replica's GTID state
       ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL gtid_slave_pos='{{ master_gtid_state }}';"
+        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "SET GLOBAL gtid_slave_pos='{{ master_gtid_state | trim }}';"
       register: set_gtid_state
       changed_when: set_gtid_state.rc == 0
 
@@ -293,7 +320,7 @@
       ansible.builtin.shell: >
         docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
         CHANGE MASTER TO
-          MASTER_HOST='{{ hostvars[groups['mariadb_master'][0]]['ansible_host'] | default(groups['mariadb_master'][0]) }}',
+          MASTER_HOST='{{ master_hostname }}',
           MASTER_USER='{{ db_repl_user }}',
           MASTER_PASSWORD='{{ db_repl_password }}',
           MASTER_USE_GTID=slave_pos;"
@@ -346,8 +373,7 @@
     - /etc/ansible/group_vars/gcp.yml
     - /etc/ansible/group_vars/mariadb.yml
   vars:
-    maxscale_container_name: us-south1a-clone-maxscale-1
-    replica_server_id: "{{ hostvars[replica_name].replica_server_id | default('2') }}"
+    maxscale_container_name: "{{ maxscale_cont_nm }}"
     replica_host: "{{ hostvars[replica_name].ansible_host }}"
     replica_port: 3306
     maxscale_config_path: /etc/maxscale.cnf
@@ -355,9 +381,9 @@
     - play2
   tasks:
 
-    - name: Add new replica server to MaxScale via maxctrl
+    - name: Add new replica server to MaxScale via maxctrl 
       ansible.builtin.shell: |
-        docker exec {{ maxscale_container_name }} maxctrl create server {{ replica_name }} {{ replica_host }} {{ replica_port }}
+        docker exec {{ maxscale_container_name }} maxctrl create server {{ replica_name }} {{ replica_host }} {{ replica_port }} 
       register: maxscale_create_server
       changed_when: "'Created' in maxscale_create_server.stdout"
       failed_when: >
@@ -365,14 +391,14 @@
         ('already exists' not in maxscale_create_server.stderr and
          'already exists' not in maxscale_create_server.stdout)
 
-    - name: Add new replica server to monitor in MaxScale via maxctrl
+    - name: Link new replica server to monitor in MaxScale via maxctrl 
       ansible.builtin.shell: |
-        docker exec {{ maxscale_container_name }} maxctrl alter monitor {{ maxscale_monitor_name }} add server {{ replica_name }}
-      register: maxscale_add_to_monitor
-      changed_when: "'altered' in maxscale_add_to_monitor.stdout"
+        docker exec {{ maxscale_container_name }} maxctrl link monitor {{ maxscale_monitor_name }} {{ replica_name }}
+      register: maxscale_link_to_monitor
+      changed_when: "'linked' in maxscale_link_to_monitor.stdout"
       failed_when: >
-        maxscale_add_to_monitor.rc != 0 and
-        ('already part of monitor' not in maxscale_add_to_monitor.stderr and
-         'already part of monitor' not in maxscale_add_to_monitor.stdout)
+        maxscale_link_to_monitor.rc != 0 and
+        ('already linked' not in maxscale_link_to_monitor.stderr and
+         'already linked' not in maxscale_link_to_monitor.stdout)
 
 

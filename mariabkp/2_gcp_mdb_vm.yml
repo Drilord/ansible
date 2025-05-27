@@ -33,7 +33,7 @@
               source_image: projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts
               disk_name: "{{ replica_name }}-boot"
               disk_type: pd-ssd
-              disk_size_gb: 100
+              disk_size_gb: 20
         network_interfaces:
           - network: { selfLink: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/networks/staging-vpc" }
             access_configs:
@@ -125,9 +125,135 @@
 #      ansible.builtin.service:
 #        name: apparmor
 #        state: reloaded
+# =============================================================================
+# Play 2 Prepare replica disk from master snapshot
+# =============================================================================
+- name: Prepare replica disk from master snapshot
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+
+  vars:
+    transfer_disk_name: master-transfer-disk
+    disk_prefix: mdbdisk
+    disk_size_gb: 100
+    disk_type: pd-ssd
+    mount_point: /mnt/mdbdisk
+  tags:
+    - play2
+
+  tasks:
+    - name: Find latest snapshot of master-transfer-disk
+      google.cloud.gcp_compute_snapshot_info:
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+      register: gcp_snapshots
+
+    - name: Debug List all candidate snapshots for {{ transfer_disk_name }}
+      debug:
+        msg: "{{ gcp_snapshots.resources | selectattr('sourceDisk', 'search', transfer_disk_name + '$') | map(attribute='name') | list }}"
+
+    - name: Set latest snapshot name for master-transfer-disk
+      set_fact:
+        latest_snapshot: >-
+          {{
+            (
+              gcp_snapshots.resources
+              | selectattr('sourceDisk', 'search', transfer_disk_name + '$')
+              | sort(attribute='creationTimestamp', reverse=true)
+              | map(attribute='name')
+              | list
+            )[0] | default('')
+          }}
+      when: gcp_snapshots.resources | length > 0
+
+    - name: Debug Show latest snapshot selected
+      debug:
+        msg: "Using snapshot {{ latest_snapshot }} for replica disk"
+
+    - name: Fail if no snapshot was found
+      ansible.builtin.fail:
+        msg: "No valid snapshot found for {{ transfer_disk_name }}. Aborting to avoid creating a blank disk!"
+      when: latest_snapshot is not defined or latest_snapshot == ""
+
+    - name: Check if replica disk exists
+      ansible.builtin.command: >
+        /google-cloud-sdk/bin/gcloud compute disks describe {{ disk_prefix }}-{{ replica_name }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project_name }}
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      register: disk_exists
+      ignore_errors: true
+
+    - name: Create disk from latest snapshot in replica zone (gcloud CLI)
+      ansible.builtin.command: >
+        /google-cloud-sdk/bin/gcloud compute disks create {{ disk_prefix }}-{{ replica_name }}
+        --project={{ gcp_project_name }}
+        --type={{ disk_type }}
+        --size={{ disk_size_gb }}GB
+        --zone={{ replica_zone }}
+        --source-snapshot=projects/{{ gcp_project_name }}/global/snapshots/{{ latest_snapshot }}
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      when: disk_exists.rc != 0
+      register: create_disk_result
+
+    - name: Attach disk to replica (using gcloud CLI)
+      ansible.builtin.command: >
+        /google-cloud-sdk/bin/gcloud compute instances attach-disk {{ replica_name }}-{{ replica_zone }}
+        --disk={{ disk_prefix }}-{{ replica_name }}
+        --device-name={{ disk_prefix }}-{{ replica_name }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project_name }}
+        --quiet
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      register: attach_disk_result
+      changed_when: "'attached' in attach_disk_result.stdout or attach_disk_result.rc == 0"
+      failed_when: >
+        attach_disk_result.rc != 0 and
+        ('already attached' not in attach_disk_result.stderr and
+         'is already attached' not in attach_disk_result.stderr and
+         'is already being used by' not in attach_disk_result.stderr)
+
+    - name: Check for disk device on replica (retry up to 3 times)
+      ansible.builtin.shell: |
+        if [ -e /dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }} ]; then
+          echo "FOUND"
+        else
+          echo "NOT FOUND"
+        fi
+      register: disk_check
+      retries: 3
+      delay: 5
+      until: disk_check.stdout.find("FOUND") != -1
+      delegate_to: "{{ replica_name }}"
+      failed_when: disk_check.stdout.find("FOUND") == -1
+
+    - name: Fail if disk device did not appear after retries
+      ansible.builtin.fail:
+        msg: "Disk device /dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }} did not appear after 3 attempts. Aborting."
+      when: disk_check.stdout.find("FOUND") == -1
+
+    - name: Create mount point on replica
+      ansible.builtin.file:
+        path: "{{ mount_point }}"
+        state: directory
+      delegate_to: "{{ replica_name }}"
+
+    - name: Mount the disk on replica
+      ansible.builtin.mount:
+        path: "{{ mount_point }}"
+        src: "/dev/disk/by-id/google-{{ disk_prefix }}-{{ replica_name }}"
+        fstype: ext4
+        state: mounted
+      delegate_to: "{{ replica_name }}"
 
 # =============================================================================
-# Play 2: Ensure Dockerized MariaDB Replica
+# Play 3: Ensure Dockerized MariaDB Replica
 # =============================================================================
 - name: Ensure Dockerized MariaDB Replica
   hosts: "{{ replica_name }}"
@@ -154,32 +280,8 @@
     query_cache_type: "OFF"
     query_cache_size: 0
   tags:
-    - play2  
+    - play3  
   tasks:
-
-    - name: Create MariaDB data directory
-      ansible.builtin.file:
-        path: "{{ mariadb_data_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-
-    - name: Create MariaDB config directory
-      ansible.builtin.file:
-        path: "{{ mariadb_config_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-
-    - name: Template custom MariaDB config
-      ansible.builtin.template:
-        src: my_custom.cnf.j2
-        dest: "{{ mariadb_custom_cnf }}"
-        owner: root
-        group: root
-        mode: '0644'
 
     - name: Pull MariaDB Docker image
       community.docker.docker_image:
@@ -194,7 +296,6 @@
         restart_policy: always
         volumes:
           - "{{ mariadb_data_dir }}:/var/lib/mysql"
-          - "{{ mariadb_custom_cnf }}:/etc/mysql/conf.d/custom.cnf:ro"
         env:
           LD_PRELOAD: "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
           MARIADB_ROOT_PASSWORD: "{{ mariadb_root_password }}"

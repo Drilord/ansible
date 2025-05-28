@@ -40,43 +40,9 @@
         'Slave_IO_Running: Yes' in slave_status.stdout and
         'Slave_SQL_Running: Yes' in slave_status.stdout
 
-    - name: Remove existing maxscale_user grants
-      ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
-      register: revoke_grantsmx
-      changed_when: revoke_grantsmx.rc == 0
-      ignore_errors: true
-
-    - name: Create or update maxscale_user on replica
-      ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
-          CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
-          ALTER USER 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
-          GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';
-          FLUSH PRIVILEGES;"
-      register: maxscale_user_result
-      changed_when: maxscale_user_result.rc == 0
-
-    - name: Remove existing laravel user grants
-      ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'laravel'@'%';"
-      register: revoke_grantslrvl
-      changed_when: revoke_grantslrvl.rc == 0
-      ignore_errors: true
-
-    - name: Create or update laravel user on replica
-      ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
-          CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
-          ALTER USER 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
-          GRANT ALL ON *.* TO 'laravel'@'%';
-          FLUSH PRIVILEGES;"
-      register: laravel_user_result
-      changed_when: laravel_user_result.rc == 0
-
     - name: Render my_custom.cnf from template
       ansible.builtin.template:
-        src: my_custom.cnf.j2
+        src: /etc/ansible/my_custom.cnf.j2
         dest: /tmp/my_custom.cnf
         owner: root
         group: root
@@ -132,7 +98,7 @@
       ansible.builtin.shell: >
         docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
         CHANGE MASTER TO
-          MASTER_HOST='{{ master_hostname }}',
+          MASTER_HOST='{{ hostvars['master'].ansible_host }}',
           MASTER_USER='{{ db_repl_user }}',
           MASTER_PASSWORD='{{ db_repl_password }}',
           MASTER_USE_GTID=slave_pos;"
@@ -142,6 +108,7 @@
     - name: Start replication threads on replica
       ansible.builtin.shell: >
         docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "START SLAVE;"
+        
       register: start_replication
       changed_when: start_replication.rc == 0
 
@@ -153,8 +120,8 @@
       failed_when: >
         'Slave_IO_Running: Yes' not in slave_status.stdout or
         'Slave_SQL_Running: Yes' not in slave_status.stdout
-      retries: 5
-      delay: 10
+      retries: 10
+      delay: 15
 
     - name: Display final replication status
       ansible.builtin.debug:
@@ -211,13 +178,14 @@
       failed_when: >
         maxscale_link_to_monitor.rc != 0 and
         ('already linked' not in maxscale_link_to_monitor.stderr and
-         'already linked' not in maxscale_link_to_monitor.stdout)
+         'already linked' not in maxscale_link_to_monitor.stdout and
+         'to the same monitor twice' not in maxscale_link_to_monitor.stderr)
 
     - name: Add new replica server to MaxScale service via maxctrl
       ansible.builtin.shell: |
-        docker exec {{ maxscale_container_name }} maxctrl add server {{ maxscale_service_name }} {{ replica_name }}
+        docker exec {{ maxscale_container_name }} maxctrl link service {{ maxscale_service_name }} {{ replica_name }}
       register: maxscale_add_to_service
-      changed_when: "'Added' in maxscale_add_to_service.stdout"
+      changed_when: "'linked' in maxscale_add_to_service.stdout"
       failed_when: >
         maxscale_add_to_service.rc != 0 and
         ('already added' not in maxscale_add_to_service.stderr and

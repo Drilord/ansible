@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  node:
+    image: node:latest
+    container_name: node
+    working_dir: /ansible
+    volumes:
+      - .:/ansible
+    command: sleep infinity
+    restart: unless-stopped
+    

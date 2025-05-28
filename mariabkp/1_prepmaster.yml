@@ -53,6 +53,10 @@
   hosts: master
   gather_facts: no
   become: yes # Use root privileges if needed for mysql commands
+  
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
 
   vars:
     # Default master server_id (adjust if different)
@@ -119,13 +123,28 @@
       register: create_repl_user
       changed_when: create_repl_user.rc == 0
 
+    - name: Create bkp user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        CREATE USER IF NOT EXISTS '{{ db_bkp_user }}'@'%' IDENTIFIED BY '{{ bkp_u_pwd }}';
+        GRANT RELOAD, LOCK TABLES, PROCESS, REPLICATION CLIENT ON *.* TO '{{ db_bkp_user }}'@'%';"
+      register: create_bkp_user
+      changed_when: create_bkp_user.rc == 0  
+
+    - name: Check if maxscale_user exists
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='maxscale_user' AND host='%';"
+      register: maxscale_user_exists
+      changed_when: false
+
     - name: Remove existing maxscale_user grants
       ansible.builtin.shell: >
         docker exec mysql mysql -u root -e "
         REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
-      register: revoke_grants
-      changed_when: revoke_grants.rc == 0
-      ignore_errors: true  # Ignore errors if the user does not exist
+      register: revoke_grants_maxscale
+      changed_when: revoke_grants_maxscale.rc == 0
+      ignore_errors: true
+      when: maxscale_user_exists.stdout | int > 0
 
     - name: Create or update maxscale_user on all replicas
       ansible.builtin.shell: >
@@ -135,13 +154,20 @@
       register: create_maxscale_user
       changed_when: create_maxscale_user.rc == 0
     
-    - name: Remove existing maxscale_user grants
+    - name: Check if laravel user exists
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='laravel' AND host='%';"
+      register: laravel_user_exists
+      changed_when: false
+
+    - name: Remove existing laravel user grants
       ansible.builtin.shell: >
         docker exec mysql mysql -u root -e "
         REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'laravel'@'%';"
-      register: revoke_grants
-      changed_when: revoke_grants.rc == 0
-      ignore_errors: true  # Ignore errors if the user does not exist
+      register: revoke_grants_laravel
+      changed_when: revoke_grants_laravel.rc == 0
+      ignore_errors: true
+      when: laravel_user_exists.stdout | int > 0
 
     - name: Create Laravel user on master
       ansible.builtin.shell: >
@@ -155,6 +181,7 @@
 
 # =============================================================================
 # Play 2: Ensure GCP Transfer Disk is Present and Attached to Master
+
 # =============================================================================
 - name: Ensure GCP transfer disk is present and attached to master
   hosts: localhost
@@ -214,7 +241,7 @@
    
 
 # =============================================================================
-# Play 3: Create Snapshot from Master and Copy to Replica
+# Play 3: Create Snapshot from Master and create a disk snap for Replica
 # =============================================================================
 - name: Create Snapshot from Master and Copy to Replica
   hosts: mariadb_master
@@ -222,24 +249,13 @@
   become: yes
   vars_files:
     - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
   vars:
     transfer_disk_name: master-transfer-disk
   tags:
     - play3
 
   tasks:
-    - name: Ensure MariaDB container is running
-      ansible.builtin.command: docker ps --filter name=mysql --filter status=running --format '{% raw %}{{.Names}}{% endraw %}'
-      register: mysql_container_check
-      changed_when: false
-      failed_when: "'mysql' not in mysql_container_check.stdout"
-
-    - name: Ensure MariaDB process is running inside the container
-      ansible.builtin.command: docker exec mysql pgrep mysqld
-      register: mysql_process_check
-      changed_when: false
-      failed_when: mysql_process_check.rc != 0
-
     - name: Ensure transfer disk mount point exists
       ansible.builtin.file:
         path: /mnt/master-transfer-disk
@@ -253,31 +269,61 @@
     - name: Format transfer disk as ext4 if needed
       ansible.builtin.command: mkfs.ext4 -F /dev/disk/by-id/google-master-transfer-disk
       when: blkid_result.rc != 0    
-    
+
     - name: Mount transfer disk
       ansible.builtin.mount:
         path: /mnt/master-transfer-disk
         src: /dev/disk/by-id/google-master-transfer-disk
         fstype: ext4
         state: mounted
+    
+    - name: Ensure backup target directory is empty
+      ansible.builtin.shell: rm -rf /mnt/master-transfer-disk/*
 
-    - name: Run mariabackup --backup to transfer disk
+    - name: Remove any existing backup helper container
+      community.docker.docker_container:
+        name: mariabackup-helper
+        state: absent
+        force_kill: true
+
+    - name: Run mariabackup helper container for backup
+      community.docker.docker_container:
+        name: mariabackup-helper
+        image: mariadb:10.4.20
+        state: started
+        command: -c "while true; do sleep 3600; done"
+        volumes:
+          - /data/mysql:/var/lib/mysql:ro
+          - /mnt/master-transfer-disk:/mnt/master-transfer-disk
+        entrypoint: /bin/bash
+        networks:
+          - name: us-south1a-clone_default
+
+    - name: Run mariabackup --backup inside helper container
       ansible.builtin.shell: |
-        mariabackup --backup \
-          --datadir=/data/mysql \
-          --target-dir=/mnt/master-transfer-disk/backup \
+        docker exec mariabackup-helper mariabackup --backup \
+          --host=mysql \
+          --port=3306 \
+          --datadir=/var/lib/mysql \
+          --target-dir=/mnt/master-transfer-disk \
           --user=mbkp \
           --password='{{ bkp_u_pwd }}'
       register: mariabackup_backup
       changed_when: mariabackup_backup.rc == 0
       failed_when: mariabackup_backup.rc != 0
 
-    - name: Prepare the backup with mariabackup --prepare
+    - name: Prepare the backup with mariabackup --prepare inside helper container
       ansible.builtin.shell: |
-        mariabackup --prepare --target-dir=/mnt/master-transfer-disk/backup
+        docker exec mariabackup-helper mariabackup --prepare --target-dir=/mnt/master-transfer-disk
       register: mariabackup_prepare
       changed_when: mariabackup_prepare.rc == 0  
       failed_when: mariabackup_prepare.rc != 0
+
+    - name: Remove mariabackup helper container
+      community.docker.docker_container:
+        name: mariabackup-helper
+        state: absent
+        force_kill: true
 
     - name: Unmount transfer disk
       ansible.builtin.mount:
@@ -286,7 +332,7 @@
 
     - name: Detach transfer disk from master (using gcloud CLI)
       ansible.builtin.shell: >
-        /google-cloud-sdk/bin/gcloud compute instances detach-disk {{ inventory_hostname }}
+        /google-cloud-sdk/bin/gcloud compute instances detach-disk {{ master_hostname }}
         --disk={{ transfer_disk_name }}
         --zone={{ replica_zone }}
         --project={{ gcp_project_name }}
@@ -296,7 +342,7 @@
       register: detach_disk_result
       changed_when: detach_disk_result.rc == 0
       failed_when: detach_disk_result.rc != 0
-  
+      delegate_to: localhost
 
     - name: Create GCP disk snapshot
       google.cloud.gcp_compute_snapshot:
@@ -321,6 +367,5 @@
         auth_kind: serviceaccount
         service_account_file: "{{ gcp_service_account_file }}"
       delegate_to: localhost
-
 
 

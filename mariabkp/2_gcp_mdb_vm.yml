@@ -11,8 +11,6 @@
  
   vars_files:
     - /etc/ansible/group_vars/gcp.yml
-  vars:
-    mariadb_container_name: "mdb-{{ replica_name }}"
   tags:
     - play0    
   tasks:
@@ -65,6 +63,15 @@
         ansible_host: "{{ replica_name }}-mdb"
         ansible_user: root
         replica_server_id: "{{ server_id }}"
+
+    - name: Wait for SSH to become available on Tailscale hostname
+      ansible.builtin.wait_for:
+        host: "{{ replica_name }}-mdb"
+        port: 22
+        delay: 5
+        timeout: 300
+        state: started
+      delegate_to: localhost
 
 
 # =============================================================================

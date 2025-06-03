@@ -38,41 +38,57 @@
       ansible.builtin.meta: end_host
       when: >
         'Slave_IO_Running: Yes' in slave_status.stdout and
-        'Slave_SQL_Running: Yes' in slave_status.stdout
+        'Slave_SQL_Running: Yes' in slave_status.stdout and
+        (
+          'Using_Gtid: Yes' in slave_status.stdout or
+          'Using_Gtid: Slave_Pos' in slave_status.stdout
+        )
+    
+    - name: Check if maxscale_user exists
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -u root -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='maxscale_user' AND host='%';"
+      register: maxscale_user_exists
+      changed_when: false
 
     - name: Remove existing maxscale_user grants
       ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
-      register: revoke_grantsmx
-      changed_when: revoke_grantsmx.rc == 0
+        docker exec {{ mariadb_container_name }} mysql -u root -e "
+        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
+      register: revoke_grants_maxscale
+      changed_when: revoke_grants_maxscale.rc == 0
       ignore_errors: true
+      when: maxscale_user_exists.stdout | int > 0
 
-    - name: Create or update maxscale_user on replica
+    - name: Create or update maxscale_user on all replicas
       ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
-          CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
-          ALTER USER 'maxscale_user'@'%' IDENTIFIED BY '{{ maxscale_pwd }}';
-          GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';
-          FLUSH PRIVILEGES;"
-      register: maxscale_user_result
-      changed_when: maxscale_user_result.rc == 0
+        docker exec {{ mariadb_container_name }} mysql -u root -e "
+        CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY 'maxscale_password';
+        GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';"
+      register: create_maxscale_user
+      changed_when: create_maxscale_user.rc == 0
+    
+    - name: Check if laravel user exists
+      ansible.builtin.shell: >
+        docker exec {{ mariadb_container_name }} mysql -u root -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='laravel' AND host='%';"
+      register: laravel_user_exists
+      changed_when: false
 
     - name: Remove existing laravel user grants
       ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'laravel'@'%';"
-      register: revoke_grantslrvl
-      changed_when: revoke_grantslrvl.rc == 0
+        docker exec {{ mariadb_container_name }} mysql -u root -e "
+        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'laravel'@'%';"
+      register: revoke_grants_laravel
+      changed_when: revoke_grants_laravel.rc == 0
       ignore_errors: true
+      when: laravel_user_exists.stdout | int > 0
 
-    - name: Create or update laravel user on replica
+    - name: Create Laravel user on master
       ansible.builtin.shell: >
-        docker exec {{ mariadb_container_name }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
-          CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
-          ALTER USER 'laravel'@'%' IDENTIFIED BY '{{ laravel_pwd }}';
-          GRANT ALL ON *.* TO 'laravel'@'%';
-          FLUSH PRIVILEGES;"
-      register: laravel_user_result
-      changed_when: laravel_user_result.rc == 0
+        docker exec {{ mariadb_container_name }} mysql -u root -e "
+          CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY 'laravel';
+          GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON incfile_core.* TO 'laravel'@'%';"
+      register: create_laravel_user
+      changed_when: create_laravel_user.rc == 0
 
     - name: Render my_custom.cnf from template
       ansible.builtin.template:

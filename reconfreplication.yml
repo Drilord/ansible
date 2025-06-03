@@ -1,0 +1,34 @@
+---
+- name: Reconfigure MariaDB replication
+  hosts: replica_server
+  become: true
+  vars_files:
+    - /etc/ansible/group_vars/reconfrep.yml
+  tasks:
+
+
+    - name: Stop replication
+      command: mysql -e "STOP SLAVE;"
+      register: stop_slave_result
+      failed_when: stop_slave_result.rc != 0
+
+    - name: Reset slave configuration
+      command: mysql -e "RESET SLAVE ALL;"
+      register: reset_slave_result
+      failed_when: reset_slave_result.rc != 0
+
+    - name: Configure new master server
+      command: mysql -e "CHANGE MASTER TO MASTER_HOST='{{ curr_master }}', MASTER_USER='{{ replication_user }}', MASTER_PASSWORD='{{ replication_password }}', MASTER_LOG_FILE='{{ master_log_file }}', MASTER_LOG_POS={{ master_log_pos }};"
+      register: change_master_result
+      failed_when: change_master_result.rc != 0
+        
+
+    - name: Start replication
+      command: mysql -e "START SLAVE;"
+      register: start_slave_result
+      failed_when: start_slave_result.rc != 0
+
+    - name: Verify replication status
+      command: mysql -e "SHOW SLAVE STATUS\G"
+      register: slave_status
+      failed_when: "'Slave_IO_Running: Yes' not in slave_status.stdout or 'Slave_SQL_Running: Yes' not in slave_status.stdout"

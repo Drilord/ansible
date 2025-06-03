@@ -1,10 +1,10 @@
 const mysql = require('mysql2');
 
 const connectionConfig = {
-  host: "100.120.7.187",
+  host: "clone-dbtest",
   port: 3307,
   user: 'laravel', // Or 'root' for testing
-  password: 'laravel', // Replace with the actual password
+  password: '', 
 };
 
 const connection = mysql.createConnection(connectionConfig);

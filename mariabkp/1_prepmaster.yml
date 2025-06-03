@@ -44,6 +44,12 @@
       ansible.builtin.apt:
         name: mariadb-backup
         state: present
+
+    - name: Ensure xfsprogs is installed
+      ansible.builtin.apt:
+        name: xfsprogs
+        state: present
+      become: yes    
         
 
 # =============================================================================
@@ -173,7 +179,7 @@
       ansible.builtin.shell: >
         docker exec mysql mysql -u root -e "
           CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY 'laravel';
-          GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON incfile_core.* TO 'laravel'@'%';"
+          GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, CREATE VIEW, ALTER, DROP, INDEX, REFERENCES ON incfile_core.* TO 'laravel'@'%';"
       register: create_laravel_user
       changed_when: create_laravel_user.rc == 0
 
@@ -266,16 +272,23 @@
       register: blkid_result
       ignore_errors: true
 
-    - name: Format transfer disk as ext4 if needed
-      ansible.builtin.command: mkfs.ext4 -F /dev/disk/by-id/google-master-transfer-disk
+    - name: Format transfer disk as xfs if needed
+      ansible.builtin.command: mkfs.xfs -f /dev/disk/by-id/google-master-transfer-disk
       when: blkid_result.rc != 0    
 
     - name: Mount transfer disk
       ansible.builtin.mount:
         path: /mnt/master-transfer-disk
         src: /dev/disk/by-id/google-master-transfer-disk
-        fstype: ext4
+        fstype: xfs
         state: mounted
+
+    - name: Ensure transfer disk mount in fstab uses 'nofail'
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^/dev/disk/by-id/google-master-transfer-disk'
+        line: '/dev/disk/by-id/google-master-transfer-disk /mnt/master-transfer-disk xfs defaults,nofail 0 0'
+        state: present
     
     - name: Ensure backup target directory is empty
       ansible.builtin.shell: rm -rf /mnt/master-transfer-disk/*

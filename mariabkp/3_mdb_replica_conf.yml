@@ -21,6 +21,7 @@
     mariadb_data_dir: /var/lib/mysql
     gtid_state_file: /mnt/mdbdisk/master_gtid_state.txt
     mariadb_container_name: "mdb-{{ replica_name }}"
+    database_name: "{{ db_name }}"
   tags:
     - play1
   tasks:
@@ -145,7 +146,7 @@
 # Play 2: Configure the new replica server in MaxScale (on master)
 # =============================================================================
 - name: Configure new replica in MaxScale
-  hosts: mariadb_master
+  hosts: "{{ maxscale_host }}"
   gather_facts: no
   become: yes
   vars_files:

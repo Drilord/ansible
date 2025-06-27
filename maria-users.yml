@@ -1,0 +1,74 @@
+# =============================================================================
+# Play 0: Manage MariaDB users on any server
+# =============================================================================
+
+- name: Manage MariaDB users on master
+  hosts: "{{ groups['mariadb_master'][0] }}" # repolace with your host group or specific hosts
+  become: true
+  gather_facts: false
+  tags: play0
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+  tasks:
+    - name: Create replication user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        CREATE USER IF NOT EXISTS '{{ db_repl_user }}'@'%' IDENTIFIED BY '{{ db_repl_password }}';
+        GRANT REPLICATION SLAVE, RELOAD, PROCESS ON *.* TO '{{ db_repl_user }}'@'%';"
+      register: create_repl_user
+      changed_when: create_repl_user.rc == 0
+
+    - name: Create bkp user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        CREATE USER IF NOT EXISTS '{{ db_bkp_user }}'@'%' IDENTIFIED BY '{{ bkp_u_pwd }}';
+        GRANT RELOAD, LOCK TABLES, PROCESS, REPLICATION CLIENT ON *.* TO '{{ db_bkp_user }}'@'%';"
+      register: create_bkp_user
+      changed_when: create_bkp_user.rc == 0  
+
+    - name: Check if maxscale_user exists
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='maxscale_user' AND host='%';"
+      register: maxscale_user_exists
+      changed_when: false
+
+    - name: Remove existing maxscale_user grants
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'maxscale_user'@'%';"
+      register: revoke_grants_maxscale
+      changed_when: revoke_grants_maxscale.rc == 0
+      ignore_errors: true
+      when: maxscale_user_exists.stdout | int > 0
+
+    - name: Create or update maxscale_user on all replicas
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        CREATE USER IF NOT EXISTS 'maxscale_user'@'%' IDENTIFIED BY 'maxscale_password';
+        GRANT REPLICATION CLIENT, SUPER, RELOAD, PROCESS, SHOW DATABASES, EVENT, REPLICATION SLAVE ON *.* TO 'maxscale_user'@'%';"
+      register: create_maxscale_user
+      changed_when: create_maxscale_user.rc == 0
+    
+    - name: Check if laravel user exists
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='laravel' AND host='%';"
+      register: laravel_user_exists
+      changed_when: false
+
+    - name: Remove existing laravel user grants
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'laravel'@'%';"
+      register: revoke_grants_laravel
+      changed_when: revoke_grants_laravel.rc == 0
+      ignore_errors: true
+      when: laravel_user_exists.stdout | int > 0
+
+    - name: Create Laravel user on master
+      ansible.builtin.shell: >
+        docker exec mysql mysql -u root -e "
+          CREATE USER IF NOT EXISTS 'laravel'@'%' IDENTIFIED BY 'laravel';
+          GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, CREATE VIEW, ALTER, DROP, INDEX, REFERENCES ON incfile_core.* TO 'laravel'@'%';"
+      register: create_laravel_user
+      changed_when: create_laravel_user.rc == 0

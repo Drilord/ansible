@@ -1,0 +1,64 @@
+---
+- name: Create VM from the latest snapshot and configure MySQL
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - ../group_vars/gcp.yml
+
+  vars:
+    source_vm_name: "source-vm-name"  # Replace with the source VM name
+    target_vm_name: "{{ replica_name }}-{{ zone_name }}"  # Constructed from replica_name and zone_name variables
+    mysql_container_name: "mdb-{{ replica_name }}"
+    network_name: "{{ vpc }}"
+
+  tasks:
+    - name: Get the latest snapshot of the source VM
+      google.cloud.gcp_compute_snapshot_info:
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        project: "{{ gcp_project }}"
+        filter: "name ~ ^{{ source_vm_name }}-.*"
+        sort_by: "creationTimestamp desc"
+        max_results: 1
+      register: latest_snapshot
+
+    - name: Fail if no snapshot is found
+      ansible.builtin.fail:
+        msg: "No snapshot found for the source VM."
+      when: latest_snapshot.resources | length == 0
+
+    - name: Create a new VM from the latest snapshot
+      google.cloud.gcp_compute_instance:
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        project: "{{ gcp_project }}"
+        zone: "{{ gcp_zone }}"
+        name: "{{ target_vm_name }}"
+        machine_type: "n1-standard-1"  # Adjust as needed
+        disks:
+          - auto_delete: true
+            boot: true
+            initialize_params:
+              source_snapshot: "{{ latest_snapshot.resources[0].selfLink }}"
+        network_interfaces:
+          - network: "{{ network_name }}"
+            access_configs:
+              - name: External NAT
+                type: ONE_TO_ONE_NAT
+
+    - name: Modify MySQL container network
+      community.docker.docker_container:
+        name: "{{ mysql_container_name }}"
+        networks:
+          - name: "{{ network_name }}"
+        state: started
+
+    - name: Stop MySQL replication (slave)
+      ansible.builtin.shell: |
+        docker exec {{ mysql_container_name }} mysql -u root -p{{ mysql_root_password }} -e "STOP SLAVE;"
+        docker exec {{ mysql_container_name }} mysql -u root -p{{ mysql_root_password }} -e "RESET SLAVE ALL;"
+
+    - name: Promote MySQL to master
+      ansible.builtin.shell: |
+        docker exec {{ mysql_container_name }} mysql -u root -p{{ mysql_root_password }} -e "SET GLOBAL read_only = OFF;"
+        docker exec {{ mysql_container_name }} mysql -u root -p{{ mysql_root_password }} -e "FLUSH PRIVILEGES;"

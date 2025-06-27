@@ -1,0 +1,26 @@
+## Ansible Playbook to Install Docker on Debian/Ubuntu
+#to run use: ansible-playbook dockerinstall.yml -i "hostname," --extra-vars "target=server ansible_user=ssh user"
+---
+# =============================================================================
+# Play 0: Ensure docker is Installed
+# =============================================================================
+- name: Install Docker (simple method) on Debian/Ubuntu
+  hosts: "{{ target }}"
+  become: true
+  tasks:
+    - name: Ensure Docker is installed
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker Python SDK is installed
+      ansible.builtin.apt:
+        name: python3-docker
+        state: present
+
+    - name: Start and enable Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true

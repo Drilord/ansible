@@ -1,0 +1,225 @@
+---
+# PLEASE NOTE: This playbook IS NOT IDEMPOTENT, it is designed to be run once to set up a new MaxScale instance.
+# It will create a new VM, install MaxScale, and configure it with the provided settings. servers are added with 3_mdb_replica... file 
+# =============================================================================
+# Play 0: Ensure MaxScale VM exists and is reachable
+# =============================================================================
+- name: Ensure MaxScale VM exists and is reachable
+  hosts: localhost
+  gather_facts: false
+  tags: play0
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/maxscale.yml
+  vars:
+    maxscale_vm_name: maxscale-{{ replica_zone }}
+    maxscale_zone: "{{ replica_zone }}"
+    maxscale_machine_type: e2-custom-4-8192
+    maxscale_disk_size: 20
+    maxscale_image: projects/debian-cloud/global/images/family/debian-11
+    maxscale_service_account_file: "{{ gcp_service_account_file }}"
+    maxscale_project: "{{ gcp_project_name }}"
+    maxscale_hostname: maxscale-{{ replica_zone }}
+  tasks:
+    - name: Ensure MaxScale VM exists (create if needed)
+      google.cloud.gcp_compute_instance:
+        name: "{{ maxscale_vm_name }}"
+        machine_type: "{{ maxscale_machine_type }}"
+        zone: "{{ maxscale_zone }}"
+        project: "{{ maxscale_project }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ maxscale_service_account_file }}"
+        disks:
+          - auto_delete: true
+            boot: true
+            device_name: boot-disk
+            initialize_params:
+              source_image: "{{ maxscale_image }}"
+              disk_name: "{{ maxscale_vm_name }}-boot"
+              disk_type: pd-ssd
+              disk_size_gb: "{{ maxscale_disk_size }}"
+        network_interfaces:
+          - network: { selfLink: "https://www.googleapis.com/compute/v1/projects/{{ maxscale_project }}/global/networks/staging-vpc" }
+            access_configs:
+              - name: External NAT
+                network_tier: STANDARD
+                type: ONE_TO_ONE_NAT
+        metadata:
+          startup-script: |
+            #!/bin/bash
+            if [ ! -f /var/log/tailscale-installed ]; then
+              curl -fsSL https://tailscale.com/install.sh | sh
+              tailscale up --authkey={{ tailscale_auth_key }} --ssh --hostname={{ maxscale_hostname }} 
+              touch /var/log/tailscale-installed
+            fi        
+        scheduling:
+          preemptible: false
+          on_host_maintenance: MIGRATE
+          automatic_restart: true
+        state: present
+      register: maxscale_vm
+
+    - name: Add or update vm entry in inventory.ini using Tailscale hostname
+      ansible.builtin.lineinfile:
+        path: /etc/ansible/inventory.ini
+        insertbefore: '^\[mariadb_replica\]'
+        regexp: "^{{ maxscale_hostname }}\\s"
+        line: "{{ maxscale_vm_name }} ansible_host={{ maxscale_hostname }} ansible_user=root" 
+        state: present
+
+    - name: Add new VM to in-memory inventory using Tailscale hostname
+      add_host:
+        name: "{{ maxscale_vm_name }}"
+        ansible_host: "{{ maxscale_hostname }}"
+        ansible_user: root
+        groups: mariadb_maxscale
+
+    - name: Set maxscale_vm_name fact for later plays
+      set_fact:
+        maxscale_vm_name: "{{ maxscale_vm_name }}"
+
+    - name: Wait for SSH to become available on MaxScale VM
+      ansible.builtin.wait_for:
+        host: "{{ maxscale_vm_name }}"
+        port: 22
+        delay: 5
+        timeout: 300
+        state: started
+      delegate_to: localhost
+     
+
+# =============================================================================
+# Play 1: Ensure MaxScale is installed and configured directly on the VM
+# =============================================================================
+- name: Ensure MaxScale is installed and configured on the VM
+  hosts: "{{ groups['mariadb_maxscale'][0] }}"
+  gather_facts: false
+  become: true
+  tags: play1
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/maxscale.yml
+  vars:
+    maxscale_vm_name: maxscale-{{ replica_zone }}
+    maxscale_threads: 4
+    maxscale_qc_cache_size: 2G
+  tasks:
+    - name: Check if Python 3 is installed
+      raw: dpkg -l | grep python3
+      register: check_python3
+      changed_when: false
+      failed_when: check_python3.rc not in [0, 1]
+
+    - name: Install Python 3 if not present
+      raw: |
+        apt-get update && apt-get install -y python3
+      when: check_python3.rc == 1
+
+    - name: Uninstall Docker if installed
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+          - python3-docker
+        state: absent
+        purge: yes
+        autoremove: yes
+      register: docker_removed
+
+    - name: Ensure required dependencies are installed
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - lsb-release
+          - gnupg
+        state: present
+        update_cache: yes
+
+    - name: Add MariaDB MaxScale APT key
+      ansible.builtin.apt_key:
+        url: https://downloads.mariadb.com/MaxScale/GPG-KEY-maxscale
+        state: present
+
+    - name: Add MariaDB MaxScale repository
+      ansible.builtin.apt_repository:
+        repo: "deb https://downloads.mariadb.com/MaxScale/apt/{{ ansible_distribution | lower }} {{ ansible_lsb.codename }} main"
+        state: present
+        filename: mariadb-maxscale
+
+    - name: Install MaxScale
+      ansible.builtin.apt:
+        name: maxscale-24.02
+        state: present
+        update_cache: yes
+
+    - name: Ensure MaxScale config directory exists
+      ansible.builtin.file:
+        path: /etc/maxscale
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Deploy MaxScale config with threads and query_classifier_cache_size
+      ansible.builtin.copy:
+        dest: /etc/maxscale/maxscale.cnf
+        content: |
+          [maxscale]
+          threads={{ maxscale_threads }}
+          query_classifier_cache_size={{ maxscale_qc_cache_size }}
+          admin_host=0.0.0.0
+          admin_secure_gui=false
+          log_info=1
+          log_notice=1
+          log_warning=1
+          syslog=1
+          maxlog=1
+        owner: root
+        group: root
+        mode: '0644'
+      register: maxscale_config
+
+    - name: Restart MaxScale if config changed
+      ansible.builtin.service:
+        name: maxscale
+        state: restarted
+      when: maxscale_config.changed
+
+    - name: Ensure MaxScale is started and enabled
+      ansible.builtin.service:
+        name: maxscale
+        state: started
+        enabled: true
+
+    - name: Create MaxScale monitor
+      ansible.builtin.shell: |
+        maxctrl create monitor {{ maxscale_monitor_name }} mariadbmon \
+          user={{ maxscale_monitor_user }} password={{ maxscale_monitor_password }} \
+          monitor_interval=2000ms \
+          auto_failover=true \
+          auto_rejoin=true \
+          failcount=1 \
+          switchover_on_low_disk_space=true \
+          failover_timeout=30s \
+          switchover_timeout=30s
+      register: create_monitor
+      changed_when: "'created' in (create_monitor.stdout | default('')) or 'already exists' in (create_monitor.stderr | default(''))"
+
+    - name: Create MaxScale service
+      ansible.builtin.shell: |
+        maxctrl create service {{ maxscale_service_name }} readwritesplit \
+          user={{ maxscale_monitor_user }} password={{ maxscale_monitor_password }}
+      register: create_service
+      changed_when: "'created' in (create_service.stdout | default('')) or 'already exists' in (create_service.stderr | default(''))"
+
+    - name: Create MaxScale listener
+      ansible.builtin.shell: |
+        maxctrl create listener {{ maxscale_service_name }} {{ maxscale_listener_name }} 3306 protocol=MariaDBClient
+      register: create_listener
+      changed_when: "'created' in (create_listener.stdout | default('')) or 'already exists' in (create_listener.stderr | default(''))"

@@ -46,6 +46,10 @@
               tailscale up --authkey={{ tailscale_auth_key }} --ssh --hostname={{ replica_name }}-mdb
               touch /var/log/tailscale-installed
             fi
+        scheduling:
+          preemptible: false                # Preemptibility: Off (Recommended)
+          on_host_maintenance: MIGRATE      # On host maintenance: Migrate VM instance (Recommended)
+          automatic_restart: true           # Automatic restart: On (Recommended)
         state: present        
       register: vm_instance
       

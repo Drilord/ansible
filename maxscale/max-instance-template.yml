@@ -1,0 +1,64 @@
+---
+- name: Create/update MaxScale Instance Template and Managed Instance Group
+  hosts: localhost
+  gather_facts: false
+  become: false
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/maxscale.yml
+  vars:
+    maxscale_template_name: maxscale-template-{{ replica_zone }}
+    maxscale_instance_group_name: maxscale-mig-{{ replica_zone }}
+    maxscale_vm_name: maxscale-{{ replica_zone }}
+    maxscale_zone: "{{ replica_zone }}"
+    maxscale_machine_type: e2-custom-4-8192
+    maxscale_disk_size: 20
+    maxscale_image: projects/debian-cloud/global/images/family/debian-12
+    maxscale_service_account_file: "{{ gcp_service_account_file }}"
+    maxscale_project: "{{ gcp_project_name }}"
+    maxscale_startup_script: |
+      #!/bin/bash
+      if [ ! -f /var/log/tailscale-installed ]; then
+        curl -fsSL https://tailscale.com/install.sh | sh
+        tailscale up --authkey={{ ts_ephemeral_key }} --ssh --hostname={{ maxscale_vm_name }}
+        touch /var/log/tailscale-installed
+      fi
+
+  tasks:
+    - name: Create or update MaxScale instance template
+      google.cloud.gcp_compute_instance_template:
+        name: "{{ maxscale_template_name }}"
+        project: "{{ maxscale_project }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ maxscale_service_account_file }}"
+        properties:
+          machineType: "{{ maxscale_machine_type }}"
+          disks:
+            - autoDelete: true
+              boot: true
+              initializeParams:
+                sourceImage: "{{ maxscale_image }}"
+                diskSizeGb: "{{ maxscale_disk_size }}"
+          networkInterfaces:
+            - network: "global/networks/staging-vpc"
+              accessConfigs:
+                - name: External NAT
+                  type: ONE_TO_ONE_NAT
+          metadata:
+            items:
+              - key: startup-script
+                value: "{{ maxscale_startup_script }}"
+        state: present
+
+    - name: Create or update MaxScale managed instance group
+      google.cloud.gcp_compute_instance_group_manager:
+        name: "{{ maxscale_instance_group_name }}"
+        project: "{{ maxscale_project }}"
+        zone: "{{ maxscale_zone }}"
+        base_instance_name: "{{ maxscale_vm_name }}"
+        version:
+          instanceTemplate: "global/instanceTemplates/{{ maxscale_template_name }}"
+        target_size: 1
+        state: present
+        auth_kind: serviceaccount
+        service_account_file: "{{ maxscale_service_account_file }}"

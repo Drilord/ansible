@@ -48,18 +48,21 @@
         owner: root
         group: root
         mode: '0644'
+      tags: mycnf
 
     - name: Copy my_custom.cnf into container
       ansible.builtin.shell: |
         docker cp /tmp/my_custom.cnf {{ mariadb_container_name }}:/etc/mysql/conf.d/my_custom.cnf
       register: copy_mycnf
       changed_when: copy_mycnf.rc == 0
+      tags: mycnf
 
     - name: Restart MariaDB container apply config
       ansible.builtin.shell: >
         docker restart "{{ mariadb_container_name }}"
       register: restart_result
       changed_when: restart_result.rc == 0
+      tags: mycnf
 
     # Wait for MariaDB to be ready inside the container
     - name: Wait for MariaDB to be ready after restart

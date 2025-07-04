@@ -1,0 +1,113 @@
+services:
+  # an async clone of the production mysql database
+  mysql:
+    container_name: mysql
+    hostname: mysql
+    restart: unless-stopped
+    image: mariadb:10.4.34
+    ports:
+      - "3306:3306"
+    volumes:
+      - "/data/mysql:/var/lib/mysql"
+    command: >
+      mysqld
+      --server-id=1
+      --expire-logs-days=60
+      --binlog-format=ROW
+      --binlog-do-db=incfile_core
+      --slow-query-log=ON
+      --slow-query-log-file=/var/log/mysql/slow.log
+      --long-query-time=5
+      --log-queries-not-using-indexes=OFF
+      --innodb-buffer-pool-size=10G
+      --innodb-buffer-pool-instances=8
+      --log-slave-updates=ON
+      --log-bin=mysqlbinlog
+      --log-error=/var/log/mysql/maria.log
+      --innodb-log-file-size=1G
+      --innodb-log-files-in-group=2
+      --innodb-flush-method=O_DIRECT
+      --innodb-io-capacity=6000
+      --innodb-io-capacity-max=12000
+      --innodb-read-io-threads=8
+      --innodb-write-io-threads=8
+      --innodb-purge-threads=4
+      --max-connections=1000
+      --thread-cache-size=32
+      --tmp-table-size=128M
+      --max-heap-table-size=128M
+      --query-cache-type=OFF
+      --query-cache-size=0
+      --relay-log=mysql-relay-bin
+      --gtid-domain-id=1
+      --gtid-strict-mode=ON
+      --innodb-buffer-pool-dump-at-shutdown=OFF
+      --max-binlog-size=10M
+    environment:
+      - MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=true
+
+
+  # an async clone of the production redis database
+  redis:
+    image: redis:5.0.7-alpine
+    hostname: redis
+    volumes:
+      - "/data/redis:/data"
+    container_name: redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 8G
+
+  # http server to distribute snapshots
+  nginx:
+    image: nginx
+    hostname: nginx
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - "/data/nginx:/usr/share/nginx/html"
+
+  # a container to run the scrub operations
+  scrub:
+    container_name: scrub
+    hostname: scrub
+    restart: unless-stopped
+    image: mariadb:10.4.20-focal
+    cpus: 4
+    command: >
+      mysqld
+      --innodb-buffer-pool-instances=4
+      --innodb-buffer-pool-size=4G
+      --innodb-buffer-pool-dump-at-shutdown=OFF
+      --innodb_doublewrite=0
+      --innodb-flush-log-at-trx-commit=0
+      --innodb-log-buffer-size=256M
+      --skip-log-bin
+    volumes:
+      - "/data/scrub:/var/lib/mysql"
+      - "/atomic/architecture/us-south1a-clone/init.sql:/docker-entrypoint-initdb.d/init.sql"
+    environment:
+      - MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=true
+
+  # a php container to orchestrate scrubs
+  phppm:
+    image: mmeyer2k/atomic:2025-02-28
+    container_name: phppm
+    working_dir: /atomic
+    command: tail -f /dev/null
+    volumes:
+      - "/atomic:/atomic"
+      - "/data:/data"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+  # maxscale container 
+  maxscale:
+    image: mariadb/maxscale:latest
+    ports:
+       - "3307:3306"
+       - "8989:8989"
+    restart: unless-stopped  
+    volumes:
+       - /data/maxscale:/maxscale/
+

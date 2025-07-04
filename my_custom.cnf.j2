@@ -6,7 +6,7 @@ binlog_format=ROW
 binlog_do_db={{ database_name }}
 slow_query_log=ON
 slow_query_log_file=/var/log/mysql/slow.log
-long_query_time=5
+long_query_time=15
 log_queries_not_using_indexes=OFF
 innodb_buffer_pool_size={{ innodb_buffer_pool_size | default('10G') }}
 innodb_buffer_pool_instances={{ innodb_buffer_pool_instances | default(8) }}
@@ -15,8 +15,13 @@ log_error=/var/log/mysql/maria.log
 innodb_log_file_size={{ innodb_log_file_size | default('1G') }}
 innodb_log_files_in_group={{ innodb_log_files_in_group | default(2) }}
 innodb_flush_method={{ innodb_flush_method | default('O_DIRECT') }}
-innodb_io_capacity={{ innodb_io_capacity | default(2000) }}
-innodb_io_capacity_max={{ innodb_io_capacity_max | default(4000) }}
+innodb_io_capacity={{ innodb_io_capacity | default(6000) }}
+innodb_io_capacity_max={{ innodb_io_capacity_max | default(12000) }}
+
+innodb_read_io_threads = {{ innodb_read_io_threads | default(8) }}  
+innodb_write_io_threads = {{ innodb_write_io_threads | default(8) }}
+innodb_purge_threads = {{ innodb_purge_threads | default(4) }}
+
 max_connections={{ max_connections | default(1000) }}
 thread_cache_size={{ thread_cache_size | default(32) }}
 tmp_table_size={{ tmp_table_size | default('128M') }}
@@ -26,7 +31,6 @@ query_cache_size={{ query_cache_size | default('0') }}
 
 # BEGIN ANSIBLE MANAGED BLOCK - REPLICA SETTINGS
 relay_log=mysql-relay-bin
-read_only=ON
 gtid_domain_id={{ gtid_domain_id | default('1') }}
 gtid_strict_mode=ON
 # next 2 lines increase performance but risk dataloss on failure 

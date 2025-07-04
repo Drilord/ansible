@@ -16,7 +16,7 @@
     maxscale_zone: "{{ replica_zone }}"
     maxscale_machine_type: e2-custom-4-8192
     maxscale_disk_size: 20
-    maxscale_image: projects/debian-cloud/global/images/family/debian-11
+    maxscale_image: projects/debian-cloud/global/images/family/debian-12
     maxscale_service_account_file: "{{ gcp_service_account_file }}"
     maxscale_project: "{{ gcp_project_name }}"
     maxscale_hostname: maxscale-{{ replica_zone }}
@@ -115,21 +115,6 @@
         apt-get update && apt-get install -y python3
       when: check_python3.rc == 1
 
-    - name: Uninstall Docker if installed
-      ansible.builtin.apt:
-        name:
-          - docker.io
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-buildx-plugin
-          - docker-compose-plugin
-          - python3-docker
-        state: absent
-        purge: yes
-        autoremove: yes
-      register: docker_removed
-
     - name: Ensure required dependencies are installed
       ansible.builtin.apt:
         name:
@@ -141,22 +126,17 @@
         state: present
         update_cache: yes
 
-    - name: Add MariaDB MaxScale APT key
-      ansible.builtin.apt_key:
-        url: https://downloads.mariadb.com/MaxScale/GPG-KEY-maxscale
-        state: present
 
-    - name: Add MariaDB MaxScale repository
-      ansible.builtin.apt_repository:
-        repo: "deb https://downloads.mariadb.com/MaxScale/apt/{{ ansible_distribution | lower }} {{ ansible_lsb.codename }} main"
-        state: present
-        filename: mariadb-maxscale
+    - name: Download MaxScale 24.02.6 deb package
+      ansible.builtin.get_url:
+        url: https://dlm.mariadb.com/4296723/MaxScale/24.02.6/debian/pool/main/m/maxscale/maxscale_24.02.6~bookworm-1_amd64.deb
+        dest: /tmp/maxscale_24.02.6~bookworm-1_amd64.deb
+        mode: '0644'
 
-    - name: Install MaxScale
+    - name: Install MaxScale 24.02.6 deb package
       ansible.builtin.apt:
-        name: maxscale-24.02
+        deb: /tmp/maxscale_24.02.6~bookworm-1_amd64.deb
         state: present
-        update_cache: yes
 
     - name: Ensure MaxScale config directory exists
       ansible.builtin.file:
@@ -168,18 +148,18 @@
 
     - name: Deploy MaxScale config with threads and query_classifier_cache_size
       ansible.builtin.copy:
-        dest: /etc/maxscale/maxscale.cnf
+        dest: /etc/maxscale.cnf
         content: |
           [maxscale]
-          threads={{ maxscale_threads }}
-          query_classifier_cache_size={{ maxscale_qc_cache_size }}
+          threads={{ maxscale_threads | default(4) }}
+          query_classifier_cache_size={{ maxscale_qc_cache_size | default('2G') }}
           admin_host=0.0.0.0
           admin_secure_gui=false
           log_info=1
           log_notice=1
           log_warning=1
-          syslog=1
-          maxlog=1
+          syslog=false
+          maxlog=true
         owner: root
         group: root
         mode: '0644'
@@ -197,29 +177,50 @@
         state: started
         enabled: true
 
-    - name: Create MaxScale monitor
+    - name: Create MaxScale monitor (no servers)
       ansible.builtin.shell: |
+        maxctrl list monitors | grep -wq "{{ maxscale_monitor_name }}" || \
         maxctrl create monitor {{ maxscale_monitor_name }} mariadbmon \
           user={{ maxscale_monitor_user }} password={{ maxscale_monitor_password }} \
-          monitor_interval=2000ms \
+          monitor_interval={{ maxscale_monitor_interval | default('2000ms') }} \
           auto_failover=true \
           auto_rejoin=true \
           failcount=1 \
           switchover_on_low_disk_space=true \
           failover_timeout=30s \
-          switchover_timeout=30s
-      register: create_monitor
-      changed_when: "'created' in (create_monitor.stdout | default('')) or 'already exists' in (create_monitor.stderr | default(''))"
+          switchover_timeout=30s \
+          enforce_read_only_slaves=true
+      args:
+        executable: /bin/bash
+
+    - name: Create MaxScale cache filter
+      ansible.builtin.shell: |
+        maxctrl list filters | grep -wq cache-filter || \
+        maxctrl create filter cache-filter \
+          module=cache \
+          cached_data=shared \
+          hard_ttl=3600000ms \
+          invalidate=current \
+          max_resultset_size=268435456 \
+          max_size=2147483648 \
+          soft_ttl=300000ms
+      args:
+        executable: /bin/bash
 
     - name: Create MaxScale service
       ansible.builtin.shell: |
+        maxctrl list services | grep -wq "{{ maxscale_service_name }}" || \
         maxctrl create service {{ maxscale_service_name }} readwritesplit \
-          user={{ maxscale_monitor_user }} password={{ maxscale_monitor_password }}
-      register: create_service
-      changed_when: "'created' in (create_service.stdout | default('')) or 'already exists' in (create_service.stderr | default(''))"
+          user={{ maxscale_monitor_user }} password={{ maxscale_monitor_password }} \
+          filters=cache-filter
+      args:
+        executable: /bin/bash
 
     - name: Create MaxScale listener
       ansible.builtin.shell: |
-        maxctrl create listener {{ maxscale_service_name }} {{ maxscale_listener_name }} 3306 protocol=MariaDBClient
-      register: create_listener
-      changed_when: "'created' in (create_listener.stdout | default('')) or 'already exists' in (create_listener.stderr | default(''))"
+        maxctrl list listeners | grep -wq "{{ maxscale_listener_name }}" || \
+        maxctrl create listener {{ maxscale_service_name }} {{ maxscale_listener_name }} 3306 \
+          protocol=MariaDBClient \
+          connection_metadata="character_set_client=auto,character_set_connection=auto,character_set_results=auto,max_allowed_packet=16M,system_time_zone=auto,time_zone=auto,tx_isolation=auto,maxscale=auto"
+      args:
+        executable: /bin/bash

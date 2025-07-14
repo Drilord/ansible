@@ -9,4 +9,4 @@
 
   tasks:
     - name: Include playbook to configure replica
-      include_tasks: confreplicas.yml
+      include_tasks: playbookname.yml

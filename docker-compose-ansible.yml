@@ -1,5 +1,4 @@
 services:
-
   ansible:
     build:
       context: .
@@ -8,22 +7,21 @@ services:
     hostname: ansible-devops
     restart: unless-stopped
     volumes:
-      - /Users/diegog/Library/CloudStorage/GoogleDrive-diego.g@bizee.com/My Drive/Github Actions/ansible:/etc/ansible
+      - ./:/etc/ansible
       - /var/run/docker.sock:/var/run/docker.sock
+      - \\wsl.localhost\Ubuntu\home\ubuntu\.ssh:/root/.Hkeys:ro
     environment:
       - TAILSCALE_AUTH_KEY=your-auth-key-here
     tty: true
-    stdin_open: true  
+    stdin_open: true
     cap_add:
       - NET_ADMIN
-      - NET_RAW 
+      - NET_RAW
     devices:
-      - /dev/net/tun:/dev/net/tun  
-    command: ["/bin/bash", "/etc/ansible/tailscale.sh"] # Run the script at runtime
+      - /dev/net/tun:/dev/net/tun
+    command: ["sleep", "infinity"]
     logging: &logging
       driver: "json-file"
       options:
         max-size: "5k"
         max-file: "1"
-
-

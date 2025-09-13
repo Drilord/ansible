@@ -1,0 +1,315 @@
+###############
+# Play 0: Backup the (<healthy db>) and copy to REPLICA (new or corrupted db)
+# make sure backup_dir has enough space for the full backup or mount a disk in that directory
+# healthy_container: is the replica container or healthy the hosts: must be the healthy db
+# 
+###############
+- name: Backup the Database (healthy) and copy to new or corrupted db
+  hosts: master
+  become: yes
+  gather_facts: yes
+  tags:
+    - play0
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    healthy_container: mysql
+    backup_user: "{{ db_bkp_user }}"
+    backup_password: "{{ bkp_u_pwd }}"
+    backup_dir: "/data/backup"
+    mariadb_data_dir: /data/mysql
+    replica_host: instance-do
+    replica_backup_dir: "/data/backup"
+  tasks:
+    - name: Ensure the backup directory exists
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+
+    - name: Ensure mdbnet Docker network exists
+      community.docker.docker_network:
+        name: mdbnet
+        state: present
+
+    - name: Connect healthy container to mdbnet network
+      ansible.builtin.shell: docker network connect mdbnet {{ healthy_container }}
+      register: connect_network
+      changed_when: connect_network.rc == 0
+      failed_when: >
+        connect_network.rc != 0 and 'already exists in network' not in connect_network.stderr
+        
+    - name: Remove any existing mariabackup-helper container
+      community.docker.docker_container:
+        name: mariabackup-helper
+        state: absent
+        force_kill: true
+
+    - name: Ensure helper container exists and is running
+      community.docker.docker_container:
+        name: mariabackup-helper
+        image: mariadb:10.4.34
+        state: started
+        networks:
+          - name: mdbnet
+        mounts:
+          - type: bind
+            source: "{{ mariadb_data_dir }}"
+            target: /var/lib/mysql
+            read_only: true
+          - type: bind
+            source: "{{ backup_dir }}"
+            target: /backup
+        command: sleep infinity
+        restart_policy: unless-stopped
+
+    - name: Check if today's backup exists
+      ansible.builtin.stat:
+        path: "{{ backup_dir }}/backup1"
+      register: backup1_stat
+
+    - name: Set backup_is_fresh fact (fresh if modified in last 24 hours)
+      set_fact:
+        backup_is_fresh: >-
+          {{
+            backup1_stat.stat.exists and
+            (ansible_date_time.epoch | int - backup1_stat.stat.mtime | int) < 86400
+          }}
+
+    - name: Debug backup freshness
+      ansible.builtin.debug:
+        msg: "Backup is fresh: {{ backup_is_fresh }}"
+
+    - name: Remove old backup directory if it exists
+      ansible.builtin.file:
+        path: "{{ backup_dir }}/backup1"
+        state: absent
+      when: not backup_is_fresh
+     
+    - name: Run mariadb-backup --backup inside helper container
+      community.docker.docker_container_exec:
+        container: mariabackup-helper
+        command: >
+          mariadb-backup --backup
+          --host={{ healthy_container }}
+          --port=3306
+          --datadir=/var/lib/mysql
+          --target-dir=/backup/backup1
+          --user={{ backup_user }}
+          --password='{{ backup_password }}'
+      register: backup_result
+      changed_when: backup_result.rc == 0
+      failed_when: backup_result.rc != 0
+      when: not backup_is_fresh
+
+    - name: Prepare backup in helper container
+      community.docker.docker_container_exec:
+        container: mariabackup-helper
+        command: mariadb-backup --prepare --target-dir=/backup/backup1
+      register: helper_prepare_result
+      changed_when: helper_prepare_result.rc == 0
+      failed_when: helper_prepare_result.rc != 0
+      when: not backup_is_fresh
+
+    - name: Remove mariabackup-helper container
+      community.docker.docker_container:
+        name: mariabackup-helper
+        state: absent
+        force_kill: true
+
+    - name: Ensure backup directory exists on replica
+      ansible.builtin.file:
+        path: "{{ replica_backup_dir }}"
+        state: directory
+      delegate_to: "{{ replica_host }}"
+
+    - name: Rsync backup directory to replica with async
+      ansible.builtin.shell: |
+        rsync -az --delete {{ backup_dir }}/backup1/ {{ replica_host }}:{{ replica_backup_dir }}/backup1/
+      delegate_to: master
+      async: 7200
+      poll: 60
+      register: rsync_result
+
+######################
+# Play 1: Restore backup onto the REPLICA (prod bkp-stg)
+######################
+- name: Restore Backup to the Replica
+  hosts: instance-do
+  become: yes
+  gather_facts: no
+  tags:
+    - play1
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    backup_dir: "/data/backup/backup1"
+    mariadb_replica_dir: /data/mysql
+    replica_container: mysql
+  tasks:
+    - name: Stop MariaDB container on replica
+      community.docker.docker_container:
+        name: "{{ replica_container }}"
+        state: stopped
+
+    - name: Remove all contents of the data directory if it exists
+      ansible.builtin.file:
+        path: "{{ mariadb_replica_dir }}"
+        state: directory
+        mode: '0755'
+        owner: "999"
+        group: "999"
+
+    - name: Remove all files in the data directory
+      ansible.builtin.shell: rm -rf {{ mariadb_replica_dir }}/*
+    
+
+    - name: Recreate data directory
+      ansible.builtin.file:
+        path: "{{ mariadb_replica_dir }}"
+        state: directory
+        owner: "999"
+        group: "999"
+        mode: '0755'
+
+    - name: Ensure backup directory exists
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+
+    - name: Ensure restore-helper container is absent before creation
+      community.docker.docker_container:
+        name: mariabackup-restore-helper
+        state: absent
+        force_kill: true
+
+    - name: Create a temporary restore-helper container
+      community.docker.docker_container:
+        name: mariabackup-restore-helper
+        image: mariadb:10.4.34
+        state: started
+        command: sleep infinity
+        mounts:
+          - type: bind
+            source: "{{ backup_dir }}"
+            target: /backup_source
+            read_only: true
+          - type: bind
+            source: "{{ mariadb_replica_dir }}"
+            target: /var/lib/mysql
+
+    - name: Check if ibdata1 exists in the data directory inside the container
+      community.docker.docker_container_exec:
+        container: mariabackup-restore-helper
+        command: test -f /var/lib/mysql/ibdata1
+      register: ibdata1_check
+      ignore_errors: true
+
+    - name: Execute --copy-back in the restore-helper container (only if not already restored)
+      community.docker.docker_container_exec:
+        container: mariabackup-restore-helper
+        command: mariadb-backup --copy-back --target-dir=/backup_source
+      register: copy_back_result
+      failed_when: copy_back_result is defined and copy_back_result.rc is defined and copy_back_result.rc != 0
+      when: ibdata1_check.rc != 0
+
+    - name: Remove the restore-helper container
+      community.docker.docker_container:
+        name: mariabackup-restore-helper
+        state: absent
+
+    - name: Ensure correct ownership of data directory
+      ansible.builtin.command: chown -R 999:999 {{ mariadb_replica_dir }}
+
+    - name: Start MariaDB container on replica
+      community.docker.docker_container:
+        name: "{{ replica_container }}"
+        state: started
+
+# Play 2: Reconfigure replication on the newly restored bkp
+- name: Reconfigure Replication on the New Replica
+  hosts: instance-do
+  become: yes
+  gather_facts: no
+  tags:
+    - play2
+  vars_files:
+    - /etc/ansible/group_vars/mariadb.yml
+    - /etc/ansible/group_vars/gcp.yml
+  vars:
+    replica_container: mysql
+    master_db_host: 100.120.49.12
+    db_repl_user: "{{ db_repl_user }}"
+    db_repl_password: "{{ db_repl_password }}"
+    replica_root_pwd: ""
+  tasks:
+    - name: Check replication status
+      ansible.builtin.command: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: false
+      retries: 2
+      delay: 3
+
+    - name: Skip remaining tasks if replication is running
+      ansible.builtin.meta: end_host
+      when: >
+        'Slave_IO_Running: Yes' in slave_status.stdout and
+        'Slave_SQL_Running: Yes' in slave_status.stdout
+
+    - name: Stop replication on replica
+      ansible.builtin.shell: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -e "STOP SLAVE;"
+      register: stop_slave
+      changed_when: stop_slave.rc == 0
+
+    - name: Reset replication state on replica
+      ansible.builtin.shell: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -e "RESET SLAVE ALL;"
+      register: reset_slave
+      changed_when: reset_slave.rc == 0
+
+    - name: Reset binary logs on replica (if binary logs exist)
+      ansible.builtin.shell: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -e "RESET MASTER;"
+      register: reset_master
+      changed_when: reset_master.rc == 0
+
+    - name: Configure replication connection on replica
+      ansible.builtin.shell: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -e "
+        CHANGE MASTER TO
+          MASTER_HOST='{{ master_db_host }}',
+          MASTER_USER='{{ db_repl_user }}',
+          MASTER_PASSWORD='{{ db_repl_password }}',
+          MASTER_USE_GTID=slave_pos;"
+      register: configure_replication
+      changed_when: configure_replication.rc == 0
+
+    - name: Start replication threads on replica
+      ansible.builtin.shell: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -e "START SLAVE;"
+      register: start_replication
+      changed_when: start_replication.rc == 0
+
+    - name: Check replication status
+      ansible.builtin.command: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: >
+        'Slave_IO_Running: Yes' not in slave_status.stdout or
+        'Slave_SQL_Running: Yes' not in slave_status.stdout
+      retries: 10
+      delay: 15
+
+    - name: Display replication status
+      ansible.builtin.debug:
+        msg:
+          - "Replication IO Thread Running: {{ slave_status.stdout | regex_search('Slave_IO_Running: (\\w+)', '\\1') | first }}"
+          - "Replication SQL Thread Running: {{ slave_status.stdout | regex_search('Slave_SQL_Running: (\\w+)', '\\1') | first }}"
+          - "Seconds Behind Master: {{ slave_status.stdout | regex_search('Seconds_Behind_Master: (\\d+)', '\\1') | first }}"
+          - "Last IO Error: {{ slave_status.stdout | regex_search('Last_IO_Error: (.*)', '\\1') | first }}"
+          - "Last SQL Error: {{ slave_status.stdout | regex_search('Last_SQL_Error: (.*)', '\\1') | first }}"

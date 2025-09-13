@@ -1,0 +1,36 @@
+allowed:
+- IPProtocol: tcp
+  ports:
+  - '4000'
+- IPProtocol: udp
+  ports:
+  - '4000'
+creationTimestamp: '2025-06-19T19:35:16.649-07:00'
+description: Cloudflare origin only traffic
+direction: INGRESS
+disabled: false
+id: '1646571107215046155'
+kind: compute#firewall
+logConfig:
+  enable: false
+name: cf-ingress
+network: https://www.googleapis.com/compute/v1/projects/production-449204/global/networks/default
+priority: 1000
+sourceRanges:
+- 173.245.48.0/20
+- 103.21.244.0/22
+- 103.22.200.0/22
+- 103.31.4.0/22
+- 141.101.64.0/18
+- 108.162.192.0/18
+- 190.93.240.0/20
+- 188.114.96.0/20
+- 104.16.0.0/13
+- 104.24.0.0/14
+- 131.0.72.0/22
+- 162.158.0.0/15
+- 172.64.0.0/13
+- 197.234.240.0/22
+- 198.41.128.0/17
+targetTags:
+- cf-origin

@@ -1,0 +1,609 @@
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+redirecting (type: action) ansible.builtin.synchronize to ansible.posix.synchronize
+
+TASK [Synchronize prepared backup directory to replica] ********************************************************************************************************************************************************
+task path: /etc/ansible/mariabkp/remoterestoreMDB.yml:125
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+redirecting (type: modules) ansible.builtin.synchronize to ansible.posix.synchronize
+redirecting (type: action) ansible.builtin.synchronize to ansible.posix.synchronize
+redirecting (type: action) ansible.builtin.synchronize to ansible.posix.synchronize
+<100.120.211.9> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.211.9> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/298c35ed9a"' 100.120.211.9 '/bin/sh -c '"'"'echo ~root && sleep 0'"'"''
+<100.120.211.9> (0, b'/root\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.211.9 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/298c35ed9a'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 306\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.211.9> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.211.9> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/298c35ed9a"' 100.120.211.9 '/bin/sh -c '"'"'( umask 77 && mkdir -p "` echo /root/.ansible/tmp `"&& mkdir "` echo /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446 `" && echo ansible-tmp-1757396124.7310412-398-27196503996446="` echo /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446 `" ) && sleep 0'"'"''
+<100.120.211.9> (0, b'ansible-tmp-1757396124.7310412-398-27196503996446=/root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.211.9 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/298c35ed9a'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 306\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+Using module file /usr/lib/python3/dist-packages/ansible_collections/ansible/posix/plugins/modules/synchronize.py
+<100.120.211.9> PUT /root/.ansible/tmp/ansible-local-296a1c73063/tmp15p0fniz TO /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py
+<100.120.211.9> SSH: EXEC sftp -b - -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/298c35ed9a"' '[100.120.211.9]'
+<100.120.211.9> (0, b'sftp> put /root/.ansible/tmp/ansible-local-296a1c73063/tmp15p0fniz /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py\n', b'OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.211.9 is address\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts\' -> \'/root/.ssh/known_hosts\'\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts2\' -> \'/root/.ssh/known_hosts2\'\r\ndebug1: auto-mux: Trying existing master at \'/root/.ansible/cp/298c35ed9a\'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 306\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug2: Remote version: 3\r\ndebug2: Server supports extension "hardlink@openssh.com" revision 1\r\ndebug2: Server supports extension "posix-rename@openssh.com" revision 1\r\ndebug2: Server supports extension "statvfs@openssh.com" revision 2\r\ndebug2: Sending SSH2_FXP_REALPATH "."\r\ndebug3: Sent message fd 3 T:16 I:1\r\ndebug3: SSH2_FXP_REALPATH . -> /root\r\ndebug3: Looking up /root/.ansible/tmp/ansible-local-296a1c73063/tmp15p0fniz\r\ndebug2: Sending SSH2_FXP_STAT "/root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py"\r\ndebug3: Sent message fd 3 T:17 I:2\r\ndebug1: stat remote: No such file or directory\r\ndebug2: sftp_upload: upload local "/root/.ansible/tmp/ansible-local-296a1c73063/tmp15p0fniz" to remote "/root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py"\r\ndebug2: Sending SSH2_FXP_OPEN "/root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py"\r\ndebug3: Sent dest message SSH2_FXP_OPEN I:3 P:/root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py M:0x001a\r\ndebug3: Sent message SSH2_FXP_WRITE I:5 O:0 S:32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 5 32768 bytes at 0\r\ndebug3: Sent message SSH2_FXP_WRITE I:6 O:32768 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:7 O:65536 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:8 O:98304 S:26097\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 6 32768 bytes at 32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 7 32768 bytes at 65536\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 8 26097 bytes at 98304\r\ndebug3: Sent message SSH2_FXP_CLOSE I:4\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n')
+<100.120.211.9> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.211.9> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/298c35ed9a"' 100.120.211.9 '/bin/sh -c '"'"'chmod u+x /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/ /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py && sleep 0'"'"''
+<100.120.211.9> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.211.9 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/298c35ed9a'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 306\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.211.9> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.211.9> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/298c35ed9a"' -tt 100.120.211.9 '/bin/sh -c '"'"'/usr/bin/python3 /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/AnsiballZ_synchronize.py && sleep 0'"'"''
+<100.120.211.9> (0, b'\r\n{"changed": false, "msg": "", "rc": 0, "cmd": "/usr/bin/rsync --delay-updates -F --compress --delete-after --archive --out-format=\'<<CHANGED>>%i %n%L\' /data/backup/backup1/ /data/backup/backup1/", "stdout_lines": [], "invocation": {"module_args": {"src": "/data/backup/backup1/", "dest": "/data/backup/backup1/", "compress": true, "archive": true, "delete": true, "_local_rsync_path": "rsync", "_local_rsync_password": null, "rsync_path": null, "_substitute_controller": false, "checksum": false, "existing_only": false, "dirs": false, "copy_links": false, "set_remote_user": true, "rsync_timeout": 0, "rsync_opts": [], "use_ssh_args": false, "ssh_connection_multiplexing": false, "partial": false, "verify_host": false, "delay_updates": true, "mode": "push", "dest_port": null, "private_key": null, "recursive": null, "links": null, "perms": null, "times": null, "owner": null, "group": null, "_ssh_args": null, "link_dest": null}}}\r\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.211.9 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/298c35ed9a'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 306\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\nShared connection to 100.120.211.9 closed.\r\n")
+<100.120.211.9> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.211.9> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/298c35ed9a"' 100.120.211.9 '/bin/sh -c '"'"'rm -f -r /root/.ansible/tmp/ansible-tmp-1757396124.7310412-398-27196503996446/ > /dev/null 2>&1 && sleep 0'"'"''
+<100.120.211.9> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.211.9 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/298c35ed9a'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 306\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+ok: [master] => {
+    "changed": false,
+    "cmd": "/usr/bin/rsync --delay-updates -F --compress --delete-after --archive --out-format='<<CHANGED>>%i %n%L' /data/backup/backup1/ /data/backup/backup1/",
+    "invocation": {
+        "module_args": {
+            "_local_rsync_password": null,
+            "_local_rsync_path": "rsync",
+            "_ssh_args": null,
+            "_substitute_controller": false,
+            "archive": true,
+            "checksum": false,
+            "compress": true,
+            "copy_links": false,
+            "delay_updates": true,
+            "delete": true,
+            "dest": "/data/backup/backup1/",
+            "dest_port": null,
+            "dirs": false,
+            "existing_only": false,
+            "group": null,
+            "link_dest": null,
+            "links": null,
+            "mode": "push",
+            "owner": null,
+            "partial": false,
+            "perms": null,
+            "private_key": null,
+            "recursive": null,
+            "rsync_opts": [],
+            "rsync_path": null,
+            "rsync_timeout": 0,
+            "set_remote_user": true,
+            "src": "/data/backup/backup1/",
+            "ssh_connection_multiplexing": false,
+            "times": null,
+            "use_ssh_args": false,
+            "verify_host": false
+        }
+    },
+    "msg": "",
+    "rc": 0,
+    "stdout_lines": []
+}
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+
+PLAY [Restore Backup to the Replica] ***************************************************************************************************************************************************************************
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+
+TASK [Stop MariaDB container on replica] ***********************************************************************************************************************************************************************
+task path: /etc/ansible/mariabkp/remoterestoreMDB.yml:154
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'echo ~root && sleep 0'"'"''
+<100.120.140.127> (0, b'/root\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'( umask 77 && mkdir -p "` echo /root/.ansible/tmp `"&& mkdir "` echo /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074 `" && echo ansible-tmp-1757396127.0263274-407-236087009330074="` echo /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074 `" ) && sleep 0'"'"''
+<100.120.140.127> (0, b'ansible-tmp-1757396127.0263274-407-236087009330074=/root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+Using module file /usr/lib/python3/dist-packages/ansible_collections/community/docker/plugins/modules/docker_container.py
+<100.120.140.127> PUT /root/.ansible/tmp/ansible-local-296a1c73063/tmp7_yixr6w TO /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py
+<100.120.140.127> SSH: EXEC sftp -b - -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' '[100.120.140.127]'
+<100.120.140.127> (0, b'sftp> put /root/.ansible/tmp/ansible-local-296a1c73063/tmp7_yixr6w /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py\n', b'OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts\' -> \'/root/.ssh/known_hosts\'\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts2\' -> \'/root/.ssh/known_hosts2\'\r\ndebug1: auto-mux: Trying existing master at \'/root/.ansible/cp/48dede27d1\'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug2: Remote version: 3\r\ndebug2: Server supports extension "hardlink@openssh.com" revision 1\r\ndebug2: Server supports extension "posix-rename@openssh.com" revision 1\r\ndebug2: Server supports extension "statvfs@openssh.com" revision 2\r\ndebug2: Sending SSH2_FXP_REALPATH "."\r\ndebug3: Sent message fd 3 T:16 I:1\r\ndebug3: SSH2_FXP_REALPATH . -> /root\r\ndebug3: Looking up /root/.ansible/tmp/ansible-local-296a1c73063/tmp7_yixr6w\r\ndebug2: Sending SSH2_FXP_STAT "/root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py"\r\ndebug3: Sent message fd 3 T:17 I:2\r\ndebug1: stat remote: No such file or directory\r\ndebug2: sftp_upload: upload local "/root/.ansible/tmp/ansible-local-296a1c73063/tmp7_yixr6w" to remote "/root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py"\r\ndebug2: Sending SSH2_FXP_OPEN "/root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py"\r\ndebug3: Sent dest message SSH2_FXP_OPEN I:3 P:/root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py M:0x001a\r\ndebug3: Sent message SSH2_FXP_WRITE I:5 O:0 S:32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 5 32768 bytes at 0\r\ndebug3: Sent message SSH2_FXP_WRITE I:6 O:32768 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:7 O:65536 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:8 O:98304 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:9 O:131072 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:10 O:163840 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:11 O:196608 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:12 O:229376 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:13 O:262144 S:124\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 6 32768 bytes at 32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 7 32768 bytes at 65536\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 8 32768 bytes at 98304\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 9 32768 bytes at 131072\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 10 32768 bytes at 163840\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 11 32768 bytes at 196608\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 12 32768 bytes at 229376\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 13 124 bytes at 262144\r\ndebug3: Sent message SSH2_FXP_CLOSE I:4\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n')
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'chmod u+x /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/ /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py && sleep 0'"'"''
+<100.120.140.127> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' -tt 100.120.140.127 '/bin/sh -c '"'"'/usr/bin/python3 /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/AnsiballZ_docker_container.py && sleep 0'"'"''
+<100.120.140.127> (0, b'\r\n{"changed": false, "container": {"Id": "56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5", "Created": "2025-09-03T14:47:14.393155637Z", "Path": "docker-entrypoint.sh", "Args": ["mysqld"], "State": {"Status": "exited", "Running": false, "Paused": false, "Restarting": false, "OOMKilled": false, "Dead": false, "Pid": 0, "ExitCode": 0, "Error": "", "StartedAt": "2025-09-03T14:47:14.446553532Z", "FinishedAt": "2025-09-09T01:44:11.233909789Z"}, "Image": "sha256:db1c64954e0a99a03efc6a5c0523365fc850f3fbd049f12ef6166b77d17aec38", "ResolvConfPath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/resolv.conf", "HostnamePath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/hostname", "HostsPath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/hosts", "LogPath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5-json.log", "Name": "/mdb-instance-do", "RestartCount": 0, "Driver": "overlay2", "Platform": "linux", "MountLabel": "", "ProcessLabel": "", "AppArmorProfile": "docker-default", "ExecIDs": null, "HostConfig": {"Binds": ["/mnt/mdbdisk:/var/lib/mysql:rw", "/data/mariadb_full_backup:/data/mariadb_full_backup:rw"], "ContainerIDFile": "", "LogConfig": {"Type": "json-file", "Config": {}}, "NetworkMode": "bridge", "PortBindings": {"3306/tcp": [{"HostIp": "0.0.0.0", "HostPort": "3306"}]}, "RestartPolicy": {"Name": "always", "MaximumRetryCount": 0}, "AutoRemove": false, "VolumeDriver": "", "VolumesFrom": null, "ConsoleSize": [0, 0], "CapAdd": null, "CapDrop": null, "CgroupnsMode": "private", "Dns": null, "DnsOptions": null, "DnsSearch": null, "ExtraHosts": null, "GroupAdd": null, "IpcMode": "private", "Cgroup": "", "Links": null, "OomScoreAdj": 0, "PidMode": "", "Privileged": false, "PublishAllPorts": false, "ReadonlyRootfs": false, "SecurityOpt": null, "UTSMode": "", "UsernsMode": "", "ShmSize": 67108864, "Runtime": "runc", "Isolation": "", "CpuShares": 0, "Memory": 0, "NanoCpus": 0, "CgroupParent": "", "BlkioWeight": 0, "BlkioWeightDevice": null, "BlkioDeviceReadBps": null, "BlkioDeviceWriteBps": null, "BlkioDeviceReadIOps": null, "BlkioDeviceWriteIOps": null, "CpuPeriod": 0, "CpuQuota": 0, "CpuRealtimePeriod": 0, "CpuRealtimeRuntime": 0, "CpusetCpus": "", "CpusetMems": "", "Devices": null, "DeviceCgroupRules": null, "DeviceRequests": null, "MemoryReservation": 0, "MemorySwap": 0, "MemorySwappiness": null, "OomKillDisable": null, "PidsLimit": null, "Ulimits": null, "CpuCount": 0, "CpuPercent": 0, "IOMaximumIOps": 0, "IOMaximumBandwidth": 0, "MaskedPaths": ["/proc/asound", "/proc/acpi", "/proc/kcore", "/proc/keys", "/proc/latency_stats", "/proc/timer_list", "/proc/timer_stats", "/proc/sched_debug", "/proc/scsi", "/sys/firmware", "/sys/devices/virtual/powercap"], "ReadonlyPaths": ["/proc/bus", "/proc/fs", "/proc/irq", "/proc/sys", "/proc/sysrq-trigger"]}, "GraphDriver": {"Data": {"LowerDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4-init/diff:/var/lib/docker/overlay2/ce96752f7b60e2f2983d08a12f2287772caa7404ee45f686ec06ae2ae766b905/diff:/var/lib/docker/overlay2/cd37d277ab0e44ed9ca42f72f682e5e5ac2d756e108e4132162d70f3927ca308/diff:/var/lib/docker/overlay2/0435bb65d8bb9d96ccddce91aee5551fd2b48f1eeec62a1752b193c91c61ef59/diff:/var/lib/docker/overlay2/1dac42e56a1218b6d14b2b263616b8b19b76f3accce2e7550e707502129859f7/diff:/var/lib/docker/overlay2/d384d819ef36f5e1dbbee89d0cd66e6e44084e919d691226cd13f9ec1ca28149/diff:/var/lib/docker/overlay2/381b8a28016b938ffe60a33ba64689bcbd9c6c471803864f4c691f69d02b68e6/diff:/var/lib/docker/overlay2/0a3039a89a6c818d2bd2c7f8f5577b5880e6607eb5245ce3114cd8a10108e9ce/diff:/var/lib/docker/overlay2/a37baf831d4cfb709641e2671d44bbd1142db6ce28889d2de03469002aed4fbe/diff:/var/lib/docker/overlay2/f541cec26404a4f8afdcd0d8a8f03d6e0fbccaecaec6dcc40dde63b128ffa32a/diff", "MergedDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4/merged", "UpperDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4/diff", "WorkDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4/work"}, "Name": "overlay2"}, "Mounts": [{"Type": "bind", "Source": "/mnt/mdbdisk", "Destination": "/var/lib/mysql", "Mode": "rw", "RW": true, "Propagation": "rprivate"}, {"Type": "bind", "Source": "/data/mariadb_full_backup", "Destination": "/data/mariadb_full_backup", "Mode": "rw", "RW": true, "Propagation": "rprivate"}], "Config": {"Hostname": "56b91769f900", "Domainname": "", "User": "", "AttachStdin": false, "AttachStdout": true, "AttachStderr": true, "ExposedPorts": {"3306/tcp": {}}, "Tty": false, "OpenStdin": false, "StdinOnce": false, "Env": ["MARIADB_ROOT_PASSWORD=fId9aGBo6171v4qKqqBA0K5ogZKhLkNY", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "GOSU_VERSION=1.17", "LANG=C.UTF-8", "MARIADB_MAJOR=10.4", "MARIADB_VERSION=1:10.4.34+maria~ubu2004"], "Cmd": ["mysqld"], "Image": "mariadb:10.4.34", "Volumes": {"/var/lib/mysql": {}}, "WorkingDir": "", "Entrypoint": ["docker-entrypoint.sh"], "OnBuild": null, "Labels": {"org.opencontainers.image.authors": "MariaDB Community", "org.opencontainers.image.base.name": "docker.io/library/ubuntu:focal", "org.opencontainers.image.description": "MariaDB Database for relational SQL", "org.opencontainers.image.documentation": "https://hub.docker.com/_/mariadb/", "org.opencontainers.image.licenses": "GPL-2.0", "org.opencontainers.image.ref.name": "ubuntu", "org.opencontainers.image.source": "https://github.com/MariaDB/mariadb-docker", "org.opencontainers.image.title": "MariaDB Database", "org.opencontainers.image.url": "https://github.com/MariaDB/mariadb-docker", "org.opencontainers.image.vendor": "MariaDB Community", "org.opencontainers.image.version": "10.4.34"}}, "NetworkSettings": {"Bridge": "", "SandboxID": "", "SandboxKey": "", "Ports": {}, "HairpinMode": false, "LinkLocalIPv6Address": "", "LinkLocalIPv6PrefixLen": 0, "SecondaryIPAddresses": null, "SecondaryIPv6Addresses": null, "EndpointID": "", "Gateway": "", "GlobalIPv6Address": "", "GlobalIPv6PrefixLen": 0, "IPAddress": "", "IPPrefixLen": 0, "IPv6Gateway": "", "MacAddress": "", "Networks": {"bridge": {"IPAMConfig": null, "Links": null, "Aliases": null, "MacAddress": "", "DriverOpts": null, "NetworkID": "d38601bb11930b86f541d1406f743bebbda7c4d91689344f7732268bf8b8cb95", "EndpointID": "", "Gateway": "", "IPAddress": "", "IPPrefixLen": 0, "IPv6Gateway": "", "GlobalIPv6Address": "", "GlobalIPv6PrefixLen": 0, "DNSNames": ["mdb-instance-do", "56b91769f900"]}}}}, "invocation": {"module_args": {"name": "mdb-instance-do", "state": "stopped", "docker_host": "unix:///var/run/docker.sock", "api_version": "auto", "timeout": 60, "tls": false, "use_ssh_client": false, "validate_certs": false, "debug": false, "cleanup": false, "container_default_behavior": "no_defaults", "command_handling": "correct", "force_kill": false, "image_comparison": "desired-image", "image_label_mismatch": "ignore", "image_name_mismatch": "recreate", "keep_volumes": true, "networks_cli_compatible": true, "output_logs": false, "pull": "missing", "pull_check_mode_behavior": "image_not_present", "recreate": false, "restart": false, "healthy_wait_timeout": 300.0, "tls_hostname": null, "ca_path": null, "client_cert": null, "client_key": null, "comparisons": null, "default_host_ip": null, "image": null, "kill_signal": null, "paused": null, "removal_wait_timeout": null, "auto_remove": null, "blkio_weight": null, "capabilities": null, "cap_drop": null, "cgroupns_mode": null, "cgroup_parent": null, "command": null, "cpu_period": null, "cpu_quota": null, "cpuset_cpus": null, "cpuset_mems": null, "cpu_shares": null, "entrypoint": null, "cpus": null, "detach": null, "interactive": null, "devices": null, "device_read_bps": null, "device_write_bps": null, "device_read_iops": null, "device_write_iops": null, "device_requests": null, "device_cgroup_rules": null, "dns_servers": null, "dns_opts": null, "dns_search_domains": null, "domainname": null, "env": null, "env_file": null, "etc_hosts": null, "groups": null, "healthcheck": null, "hostname": null, "init": null, "ipc_mode": null, "kernel_memory": null, "labels": null, "links": null, "log_driver": null, "log_options": null, "mac_address": null, "memory": null, "memory_reservation": null, "memory_swap": null, "memory_swappiness": null, "stop_timeout": null, "network_mode": null, "networks": null, "oom_killer": null, "oom_score_adj": null, "pid_mode": null, "pids_limit": null, "platform": null, "privileged": null, "read_only": null, "restart_policy": null, "restart_retries": null, "runtime": null, "security_opts": null, "shm_size": null, "stop_signal": null, "storage_opts": null, "sysctls": null, "tmpfs": null, "tty": null, "ulimits": null, "user": null, "userns_mode": null, "uts": null, "volume_driver": null, "volumes_from": null, "working_dir": null, "mounts": null, "volumes": null, "exposed_ports": null, "publish_all_ports": null, "published_ports": null}}}\r\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\nShared connection to 100.120.140.127 closed.\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'rm -f -r /root/.ansible/tmp/ansible-tmp-1757396127.0263274-407-236087009330074/ > /dev/null 2>&1 && sleep 0'"'"''
+<100.120.140.127> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+ok: [instance-do] => {
+    "changed": false,
+    "container": {
+        "AppArmorProfile": "docker-default",
+        "Args": [
+            "mysqld"
+        ],
+        "Config": {
+            "AttachStderr": true,
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "Cmd": [
+                "mysqld"
+            ],
+            "Domainname": "",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "Env": [
+                "MARIADB_ROOT_PASSWORD=fId9aGBo6171v4qKqqBA0K5ogZKhLkNY",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "GOSU_VERSION=1.17",
+                "LANG=C.UTF-8",
+                "MARIADB_MAJOR=10.4",
+                "MARIADB_VERSION=1:10.4.34+maria~ubu2004"
+            ],
+            "ExposedPorts": {
+                "3306/tcp": {}
+            },
+            "Hostname": "56b91769f900",
+            "Image": "mariadb:10.4.34",
+            "Labels": {
+                "org.opencontainers.image.authors": "MariaDB Community",
+                "org.opencontainers.image.base.name": "docker.io/library/ubuntu:focal",
+                "org.opencontainers.image.description": "MariaDB Database for relational SQL",
+                "org.opencontainers.image.documentation": "https://hub.docker.com/_/mariadb/",
+                "org.opencontainers.image.licenses": "GPL-2.0",
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.source": "https://github.com/MariaDB/mariadb-docker",
+                "org.opencontainers.image.title": "MariaDB Database",
+                "org.opencontainers.image.url": "https://github.com/MariaDB/mariadb-docker",
+                "org.opencontainers.image.vendor": "MariaDB Community",
+                "org.opencontainers.image.version": "10.4.34"
+            },
+            "OnBuild": null,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Tty": false,
+            "User": "",
+            "Volumes": {
+                "/var/lib/mysql": {}
+            },
+            "WorkingDir": ""
+        },
+        "Created": "2025-09-03T14:47:14.393155637Z",
+        "Driver": "overlay2",
+        "ExecIDs": null,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4-init/diff:/var/lib/docker/overlay2/ce96752f7b60e2f2983d08a12f2287772caa7404ee45f686ec06ae2ae766b905/diff:/var/lib/docker/overlay2/cd37d277ab0e44ed9ca42f72f682e5e5ac2d756e108e4132162d70f3927ca308/diff:/var/lib/docker/overlay2/0435bb65d8bb9d96ccddce91aee5551fd2b48f1eeec62a1752b193c91c61ef59/diff:/var/lib/docker/overlay2/1dac42e56a1218b6d14b2b263616b8b19b76f3accce2e7550e707502129859f7/diff:/var/lib/docker/overlay2/d384d819ef36f5e1dbbee89d0cd66e6e44084e919d691226cd13f9ec1ca28149/diff:/var/lib/docker/overlay2/381b8a28016b938ffe60a33ba64689bcbd9c6c471803864f4c691f69d02b68e6/diff:/var/lib/docker/overlay2/0a3039a89a6c818d2bd2c7f8f5577b5880e6607eb5245ce3114cd8a10108e9ce/diff:/var/lib/docker/overlay2/a37baf831d4cfb709641e2671d44bbd1142db6ce28889d2de03469002aed4fbe/diff:/var/lib/docker/overlay2/f541cec26404a4f8afdcd0d8a8f03d6e0fbccaecaec6dcc40dde63b128ffa32a/diff",
+                "MergedDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4/merged",
+                "UpperDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4/diff",
+                "WorkDir": "/var/lib/docker/overlay2/cddf229f2da718802a94ec1d2095aed196ce467cd45160b0ae15609275fc37f4/work"
+            },
+            "Name": "overlay2"
+        },
+        "HostConfig": {
+            "AutoRemove": false,
+            "Binds": [
+                "/mnt/mdbdisk:/var/lib/mysql:rw",
+                "/data/mariadb_full_backup:/data/mariadb_full_backup:rw"
+            ],
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceWriteIOps": null,
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "CapAdd": null,
+            "CapDrop": null,
+            "Cgroup": "",
+            "CgroupParent": "",
+            "CgroupnsMode": "private",
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "ContainerIDFile": "",
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpuShares": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "Devices": null,
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": null,
+            "GroupAdd": null,
+            "IOMaximumBandwidth": 0,
+            "IOMaximumIOps": 0,
+            "IpcMode": "private",
+            "Isolation": "",
+            "Links": null,
+            "LogConfig": {
+                "Config": {},
+                "Type": "json-file"
+            },
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "Memory": 0,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "NanoCpus": 0,
+            "NetworkMode": "bridge",
+            "OomKillDisable": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "PidsLimit": null,
+            "PortBindings": {
+                "3306/tcp": [
+                    {
+                        "HostIp": "0.0.0.0",
+                        "HostPort": "3306"
+                    }
+                ]
+            },
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ],
+            "ReadonlyRootfs": false,
+            "RestartPolicy": {
+                "MaximumRetryCount": 0,
+                "Name": "always"
+            },
+            "Runtime": "runc",
+            "SecurityOpt": null,
+            "ShmSize": 67108864,
+            "UTSMode": "",
+            "Ulimits": null,
+            "UsernsMode": "",
+            "VolumeDriver": "",
+            "VolumesFrom": null
+        },
+        "HostnamePath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/hostname",
+        "HostsPath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/hosts",
+        "Id": "56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5",
+        "Image": "sha256:db1c64954e0a99a03efc6a5c0523365fc850f3fbd049f12ef6166b77d17aec38",
+        "LogPath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5-json.log",
+        "MountLabel": "",
+        "Mounts": [
+            {
+                "Destination": "/var/lib/mysql",
+                "Mode": "rw",
+                "Propagation": "rprivate",
+                "RW": true,
+                "Source": "/mnt/mdbdisk",
+                "Type": "bind"
+            },
+            {
+                "Destination": "/data/mariadb_full_backup",
+                "Mode": "rw",
+                "Propagation": "rprivate",
+                "RW": true,
+                "Source": "/data/mariadb_full_backup",
+                "Type": "bind"
+            }
+        ],
+        "Name": "/mdb-instance-do",
+        "NetworkSettings": {
+            "Bridge": "",
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "HairpinMode": false,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "MacAddress": "",
+            "Networks": {
+                "bridge": {
+                    "Aliases": null,
+                    "DNSNames": [
+                        "mdb-instance-do",
+                        "56b91769f900"
+                    ],
+                    "DriverOpts": null,
+                    "EndpointID": "",
+                    "Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "IPAMConfig": null,
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "Links": null,
+                    "MacAddress": "",
+                    "NetworkID": "d38601bb11930b86f541d1406f743bebbda7c4d91689344f7732268bf8b8cb95"
+                }
+            },
+            "Ports": {},
+            "SandboxID": "",
+            "SandboxKey": "",
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null
+        },
+        "Path": "docker-entrypoint.sh",
+        "Platform": "linux",
+        "ProcessLabel": "",
+        "ResolvConfPath": "/var/lib/docker/containers/56b91769f900243a8bb4a6adc88293c22223c15fe7ab3470a18c986d05c25de5/resolv.conf",
+        "RestartCount": 0,
+        "State": {
+            "Dead": false,
+            "Error": "",
+            "ExitCode": 0,
+            "FinishedAt": "2025-09-09T01:44:11.233909789Z",
+            "OOMKilled": false,
+            "Paused": false,
+            "Pid": 0,
+            "Restarting": false,
+            "Running": false,
+            "StartedAt": "2025-09-03T14:47:14.446553532Z",
+            "Status": "exited"
+        }
+    },
+    "invocation": {
+        "module_args": {
+            "api_version": "auto",
+            "auto_remove": null,
+            "blkio_weight": null,
+            "ca_path": null,
+            "cap_drop": null,
+            "capabilities": null,
+            "cgroup_parent": null,
+            "cgroupns_mode": null,
+            "cleanup": false,
+            "client_cert": null,
+            "client_key": null,
+            "command": null,
+            "command_handling": "correct",
+            "comparisons": null,
+            "container_default_behavior": "no_defaults",
+            "cpu_period": null,
+            "cpu_quota": null,
+            "cpu_shares": null,
+            "cpus": null,
+            "cpuset_cpus": null,
+            "cpuset_mems": null,
+            "debug": false,
+            "default_host_ip": null,
+            "detach": null,
+            "device_cgroup_rules": null,
+            "device_read_bps": null,
+            "device_read_iops": null,
+            "device_requests": null,
+            "device_write_bps": null,
+            "device_write_iops": null,
+            "devices": null,
+            "dns_opts": null,
+            "dns_search_domains": null,
+            "dns_servers": null,
+            "docker_host": "unix:///var/run/docker.sock",
+            "domainname": null,
+            "entrypoint": null,
+            "env": null,
+            "env_file": null,
+            "etc_hosts": null,
+            "exposed_ports": null,
+            "force_kill": false,
+            "groups": null,
+            "healthcheck": null,
+            "healthy_wait_timeout": 300.0,
+            "hostname": null,
+            "image": null,
+            "image_comparison": "desired-image",
+            "image_label_mismatch": "ignore",
+            "image_name_mismatch": "recreate",
+            "init": null,
+            "interactive": null,
+            "ipc_mode": null,
+            "keep_volumes": true,
+            "kernel_memory": null,
+            "kill_signal": null,
+            "labels": null,
+            "links": null,
+            "log_driver": null,
+            "log_options": null,
+            "mac_address": null,
+            "memory": null,
+            "memory_reservation": null,
+            "memory_swap": null,
+            "memory_swappiness": null,
+            "mounts": null,
+            "name": "mdb-instance-do",
+            "network_mode": null,
+            "networks": null,
+            "networks_cli_compatible": true,
+            "oom_killer": null,
+            "oom_score_adj": null,
+            "output_logs": false,
+            "paused": null,
+            "pid_mode": null,
+            "pids_limit": null,
+            "platform": null,
+            "privileged": null,
+            "publish_all_ports": null,
+            "published_ports": null,
+            "pull": "missing",
+            "pull_check_mode_behavior": "image_not_present",
+            "read_only": null,
+            "recreate": false,
+            "removal_wait_timeout": null,
+            "restart": false,
+            "restart_policy": null,
+            "restart_retries": null,
+            "runtime": null,
+            "security_opts": null,
+            "shm_size": null,
+            "state": "stopped",
+            "stop_signal": null,
+            "stop_timeout": null,
+            "storage_opts": null,
+            "sysctls": null,
+            "timeout": 60,
+            "tls": false,
+            "tls_hostname": null,
+            "tmpfs": null,
+            "tty": null,
+            "ulimits": null,
+            "use_ssh_client": false,
+            "user": null,
+            "userns_mode": null,
+            "uts": null,
+            "validate_certs": false,
+            "volume_driver": null,
+            "volumes": null,
+            "volumes_from": null,
+            "working_dir": null
+        }
+    }
+}
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+
+TASK [Remove all contents of the data directory if it exists] **************************************************************************************************************************************************
+task path: /etc/ansible/mariabkp/remoterestoreMDB.yml:159
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'echo ~root && sleep 0'"'"''
+<100.120.140.127> (0, b'/root\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'( umask 77 && mkdir -p "` echo /root/.ansible/tmp `"&& mkdir "` echo /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397 `" && echo ansible-tmp-1757396130.0436711-415-269826436661397="` echo /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397 `" ) && sleep 0'"'"''
+<100.120.140.127> (0, b'ansible-tmp-1757396130.0436711-415-269826436661397=/root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+Using module file /usr/lib/python3/dist-packages/ansible/modules/file.py
+<100.120.140.127> PUT /root/.ansible/tmp/ansible-local-296a1c73063/tmpo37pr4g7 TO /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py
+<100.120.140.127> SSH: EXEC sftp -b - -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' '[100.120.140.127]'
+<100.120.140.127> (0, b'sftp> put /root/.ansible/tmp/ansible-local-296a1c73063/tmpo37pr4g7 /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py\n', b'OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts\' -> \'/root/.ssh/known_hosts\'\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts2\' -> \'/root/.ssh/known_hosts2\'\r\ndebug1: auto-mux: Trying existing master at \'/root/.ansible/cp/48dede27d1\'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug2: Remote version: 3\r\ndebug2: Server supports extension "hardlink@openssh.com" revision 1\r\ndebug2: Server supports extension "posix-rename@openssh.com" revision 1\r\ndebug2: Server supports extension "statvfs@openssh.com" revision 2\r\ndebug2: Sending SSH2_FXP_REALPATH "."\r\ndebug3: Sent message fd 3 T:16 I:1\r\ndebug3: SSH2_FXP_REALPATH . -> /root\r\ndebug3: Looking up /root/.ansible/tmp/ansible-local-296a1c73063/tmpo37pr4g7\r\ndebug2: Sending SSH2_FXP_STAT "/root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py"\r\ndebug3: Sent message fd 3 T:17 I:2\r\ndebug1: stat remote: No such file or directory\r\ndebug2: sftp_upload: upload local "/root/.ansible/tmp/ansible-local-296a1c73063/tmpo37pr4g7" to remote "/root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py"\r\ndebug2: Sending SSH2_FXP_OPEN "/root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py"\r\ndebug3: Sent dest message SSH2_FXP_OPEN I:3 P:/root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py M:0x001a\r\ndebug3: Sent message SSH2_FXP_WRITE I:5 O:0 S:32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 5 32768 bytes at 0\r\ndebug3: Sent message SSH2_FXP_WRITE I:6 O:32768 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:7 O:65536 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:8 O:98304 S:27932\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 6 32768 bytes at 32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 7 32768 bytes at 65536\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 8 27932 bytes at 98304\r\ndebug3: Sent message SSH2_FXP_CLOSE I:4\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n')
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'chmod u+x /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/ /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py && sleep 0'"'"''
+<100.120.140.127> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' -tt 100.120.140.127 '/bin/sh -c '"'"'/usr/bin/python3 /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/AnsiballZ_file.py && sleep 0'"'"''
+<100.120.140.127> (0, b'\r\n{"path": "/data/mysql", "changed": false, "diff": {"before": {"path": "/data/mysql"}, "after": {"path": "/data/mysql"}}, "uid": 999, "gid": 999, "owner": "lxd", "group": "999", "mode": "0755", "state": "directory", "size": 6, "invocation": {"module_args": {"path": "/data/mysql", "state": "directory", "mode": "0755", "owner": "999", "group": "999", "recurse": false, "force": false, "follow": true, "modification_time_format": "%Y%m%d%H%M.%S", "access_time_format": "%Y%m%d%H%M.%S", "unsafe_writes": false, "_original_basename": null, "_diff_peek": null, "src": null, "modification_time": null, "access_time": null, "seuser": null, "serole": null, "selevel": null, "setype": null, "attributes": null}}}\r\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\nShared connection to 100.120.140.127 closed.\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'rm -f -r /root/.ansible/tmp/ansible-tmp-1757396130.0436711-415-269826436661397/ > /dev/null 2>&1 && sleep 0'"'"''
+<100.120.140.127> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+ok: [instance-do] => {
+    "changed": false,
+    "diff": {
+        "after": {
+            "path": "/data/mysql"
+        },
+        "before": {
+            "path": "/data/mysql"
+        }
+    },
+    "gid": 999,
+    "group": "999",
+    "invocation": {
+        "module_args": {
+            "_diff_peek": null,
+            "_original_basename": null,
+            "access_time": null,
+            "access_time_format": "%Y%m%d%H%M.%S",
+            "attributes": null,
+            "follow": true,
+            "force": false,
+            "group": "999",
+            "mode": "0755",
+            "modification_time": null,
+            "modification_time_format": "%Y%m%d%H%M.%S",
+            "owner": "999",
+            "path": "/data/mysql",
+            "recurse": false,
+            "selevel": null,
+            "serole": null,
+            "setype": null,
+            "seuser": null,
+            "src": null,
+            "state": "directory",
+            "unsafe_writes": false
+        }
+    },
+    "mode": "0755",
+    "owner": "lxd",
+    "path": "/data/mysql",
+    "size": 6,
+    "state": "directory",
+    "uid": 999
+}
+Read vars_file '/etc/ansible/group_vars/gcp.yml'
+Read vars_file '/etc/ansible/group_vars/mariadb.yml'
+
+TASK [Remove all files in the data directory] ******************************************************************************************************************************************************************
+task path: /etc/ansible/mariabkp/remoterestoreMDB.yml:167
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'echo ~root && sleep 0'"'"''
+<100.120.140.127> (0, b'/root\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'( umask 77 && mkdir -p "` echo /root/.ansible/tmp `"&& mkdir "` echo /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528 `" && echo ansible-tmp-1757396132.4717164-423-240618383746528="` echo /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528 `" ) && sleep 0'"'"''
+<100.120.140.127> (0, b'ansible-tmp-1757396132.4717164-423-240618383746528=/root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+Using module file /usr/lib/python3/dist-packages/ansible/modules/command.py
+<100.120.140.127> PUT /root/.ansible/tmp/ansible-local-296a1c73063/tmp3l53cqb_ TO /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py
+<100.120.140.127> SSH: EXEC sftp -b - -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' '[100.120.140.127]'
+<100.120.140.127> (0, b'sftp> put /root/.ansible/tmp/ansible-local-296a1c73063/tmp3l53cqb_ /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py\n', b'OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts\' -> \'/root/.ssh/known_hosts\'\r\ndebug3: expanded UserKnownHostsFile \'~/.ssh/known_hosts2\' -> \'/root/.ssh/known_hosts2\'\r\ndebug1: auto-mux: Trying existing master at \'/root/.ansible/cp/48dede27d1\'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug2: Remote version: 3\r\ndebug2: Server supports extension "hardlink@openssh.com" revision 1\r\ndebug2: Server supports extension "posix-rename@openssh.com" revision 1\r\ndebug2: Server supports extension "statvfs@openssh.com" revision 2\r\ndebug2: Sending SSH2_FXP_REALPATH "."\r\ndebug3: Sent message fd 3 T:16 I:1\r\ndebug3: SSH2_FXP_REALPATH . -> /root\r\ndebug3: Looking up /root/.ansible/tmp/ansible-local-296a1c73063/tmp3l53cqb_\r\ndebug2: Sending SSH2_FXP_STAT "/root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py"\r\ndebug3: Sent message fd 3 T:17 I:2\r\ndebug1: stat remote: No such file or directory\r\ndebug2: sftp_upload: upload local "/root/.ansible/tmp/ansible-local-296a1c73063/tmp3l53cqb_" to remote "/root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py"\r\ndebug2: Sending SSH2_FXP_OPEN "/root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py"\r\ndebug3: Sent dest message SSH2_FXP_OPEN I:3 P:/root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py M:0x001a\r\ndebug3: Sent message SSH2_FXP_WRITE I:5 O:0 S:32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 5 32768 bytes at 0\r\ndebug3: Sent message SSH2_FXP_WRITE I:6 O:32768 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:7 O:65536 S:32768\r\ndebug3: Sent message SSH2_FXP_WRITE I:8 O:98304 S:21728\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 6 32768 bytes at 32768\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 7 32768 bytes at 65536\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: In write loop, ack for 8 21728 bytes at 98304\r\ndebug3: Sent message SSH2_FXP_CLOSE I:4\r\ndebug3: SSH2_FXP_STATUS 0\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n')
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'chmod u+x /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/ /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py && sleep 0'"'"''
+<100.120.140.127> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' -tt 100.120.140.127 '/bin/sh -c '"'"'/usr/bin/python3 /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/AnsiballZ_command.py && sleep 0'"'"''
+<100.120.140.127> (1, b'\r\n{"failed": true, "msg": "Unsupported parameters for (ansible.legacy.command) module: warn. Supported parameters include: _raw_params, _uses_shell, argv, chdir, creates, executable, expand_argument_vars, removes, stdin, stdin_add_newline, strip_empty_ends.", "invocation": {"module_args": {"warn": false, "_raw_params": "rm -rf /data/mysql/*\\n", "_uses_shell": true, "expand_argument_vars": true, "stdin_add_newline": true, "strip_empty_ends": true, "argv": null, "chdir": null, "executable": null, "creates": null, "removes": null, "stdin": null}}}\r\n', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 1\r\nShared connection to 100.120.140.127 closed.\r\n")
+<100.120.140.127> Failed to connect to the host via ssh: OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024
+debug1: Reading configuration data /etc/ssh/ssh_config
+debug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files
+debug1: /etc/ssh/ssh_config line 21: Applying options for *
+debug2: resolve_canonicalize: hostname 100.120.140.127 is address
+debug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'
+debug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'
+debug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'
+debug2: fd 3 setting O_NONBLOCK
+debug2: mux_client_hello_exchange: master version 4
+debug3: mux_client_forwards: request forwardings: 0 local, 0 remote
+debug3: mux_client_request_session: entering
+debug3: mux_client_request_alive: entering
+debug3: mux_client_request_alive: done pid = 391
+debug3: mux_client_request_session: session request sent
+debug1: mux_client_request_session: master session id: 2
+debug3: mux_client_read_packet_timeout: read header failed: Broken pipe
+debug2: Received exit status from master 1
+Shared connection to 100.120.140.127 closed.
+<100.120.140.127> ESTABLISH SSH CONNECTION FOR USER: root
+<100.120.140.127> SSH: EXEC ssh -vvv -C -o ControlMaster=auto -o ControlPersist=60s -o KbdInteractiveAuthentication=no -o PreferredAuthentications=gssapi-with-mic,gssapi-keyex,hostbased,publickey -o PasswordAuthentication=no -o 'User="root"' -o ConnectTimeout=10 -o 'ControlPath="/root/.ansible/cp/48dede27d1"' 100.120.140.127 '/bin/sh -c '"'"'rm -f -r /root/.ansible/tmp/ansible-tmp-1757396132.4717164-423-240618383746528/ > /dev/null 2>&1 && sleep 0'"'"''
+<100.120.140.127> (0, b'', b"OpenSSH_9.6p1 Ubuntu-3ubuntu13.11, OpenSSL 3.0.13 30 Jan 2024\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug1: /etc/ssh/ssh_config line 19: include /etc/ssh/ssh_config.d/*.conf matched no files\r\ndebug1: /etc/ssh/ssh_config line 21: Applying options for *\r\ndebug2: resolve_canonicalize: hostname 100.120.140.127 is address\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts' -> '/root/.ssh/known_hosts'\r\ndebug3: expanded UserKnownHostsFile '~/.ssh/known_hosts2' -> '/root/.ssh/known_hosts2'\r\ndebug1: auto-mux: Trying existing master at '/root/.ansible/cp/48dede27d1'\r\ndebug2: fd 3 setting O_NONBLOCK\r\ndebug2: mux_client_hello_exchange: master version 4\r\ndebug3: mux_client_forwards: request forwardings: 0 local, 0 remote\r\ndebug3: mux_client_request_session: entering\r\ndebug3: mux_client_request_alive: entering\r\ndebug3: mux_client_request_alive: done pid = 391\r\ndebug3: mux_client_request_session: session request sent\r\ndebug1: mux_client_request_session: master session id: 2\r\ndebug3: mux_client_read_packet_timeout: read header failed: Broken pipe\r\ndebug2: Received exit status from master 0\r\n")
+fatal: [instance-do]: FAILED! => {
+    "changed": false,
+    "invocation": {
+        "module_args": {
+            "_raw_params": "rm -rf /data/mysql/*\n",
+            "_uses_shell": true,
+            "argv": null,
+            "chdir": null,
+            "creates": null,
+            "executable": null,
+            "expand_argument_vars": true,
+            "removes": null,
+            "stdin": null,
+            "stdin_add_newline": true,
+            "strip_empty_ends": true,
+            "warn": false
+        }
+    },
+    "msg": "Unsupported parameters for (ansible.legacy.command) module: warn. Supported parameters include: _raw_params, _uses_shell, argv, chdir, creates, executable, expand_argument_vars, removes, stdin, stdin_add_newline, strip_empty_ends."
+}
+
+PLAY RECAP *****************************************************************************************************************************************************************************************************
+instance-do                : ok=2    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+master                     : ok=14   changed=5    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+

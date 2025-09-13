@@ -1,0 +1,195 @@
+---
+# =============================================================================
+# Play 0: Create DigitalOcean Droplet with Tailscale
+# =============================================================================
+- name: Create DigitalOcean droplet for MariaDB replica
+  hosts: localhost
+  gather_facts: false
+  tags:
+    - play0
+  vars_files:
+    - /etc/ansible/group_vars/build-stg.yml
+    - /etc/ansible/group_vars/gcp.yml
+
+  tasks:
+    - name: Create DigitalOcean droplet for replica
+      community.digitalocean.digital_ocean_droplet:
+        state: present
+        name: "mdb-{{ do_droplet_name }}"
+        region: "{{ do_region }}"
+        size: "{{ do_size }}"
+        image: "{{ do_image }}"
+        ssh_keys: ["{{ do_ssh_key_fingerprint }}"]
+        api_token: "{{ do_api_token }}"
+        vpc_uuid: "{{ do_vpc_uuid }}"
+        monitoring: "{{ do_monitoring }}"
+        backups: "{{ do_backups }}"
+        user_data: |
+          #cloud-config
+          runcmd:
+            - curl -fsSL https://tailscale.com/install.sh | sh
+            - tailscale up --authkey={{ tailscale_auth_key }} --ssh --hostname={{ do_droplet_name }}
+      register: do_droplet
+
+    - name: Wait for Tailscale SSH to become available
+      ansible.builtin.wait_for:
+        host: "{{ do_droplet_name }}"
+        port: 22
+        delay: 5
+        timeout: 300
+        state: started
+
+    - name: Add or update DO droplet entry in inventory.ini using Tailscale hostname
+      ansible.builtin.lineinfile:
+        path: /etc/ansible/inventory.ini
+        insertbefore: '^\[mariadb:children\]'
+        regexp: "^{{ do_droplet_name }}\\s"
+        line: "{{ do_droplet_name }} ansible_host={{ do_droplet_name }} ansible_user=root"
+        state: present
+
+    - name: Add new DO droplet to in-memory inventory using Tailscale hostname
+      add_host:
+        name: "{{ do_droplet_name }}"
+        ansible_host: "{{ do_droplet_name }}"
+        ansible_user: root
+        groups: mariadb_replica
+
+# =============================================================================
+# Play 1: Install required software on DO droplet
+# =============================================================================
+- name: Install raw:required software on DO droplet
+  hosts: instance-do
+  become: true
+  tags:
+    - play1
+  tasks:
+    - name: Gather installed package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Check if Python 3 is installed
+      raw: |
+        dpkg -l | grep python3
+      register: check_python3
+      changed_when: false
+      failed_when: check_python3.rc not in [0, 1]
+
+    - name: Install Python 3 if not present
+      raw: |
+        apt-get update && apt-get install -y python3
+      when: check_python3.rc == 1
+
+    - name: Install python3-mysqldb
+      ansible.builtin.apt:
+        name: python3-mysqldb
+        state: present
+
+    - name: Ensure Docker is installed
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker Python SDK is installed
+      ansible.builtin.apt:
+        name: python3-docker
+        state: present
+
+    - name: Ensure Docker CLI plugins directory exists
+      ansible.builtin.file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker Compose v2 binary
+      ansible.builtin.get_url:
+        url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: "0755"
+
+    - name: Start and enable Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+# =============================================================================
+# Play 2: Ensure MariaDB Docker container is running on DO
+# =============================================================================
+- name: Ensure MariaDB Docker container is running on DO
+  hosts: instance-do
+  become: true
+  tags:
+    - play2
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml  
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    mariadb_image: "mariadb:10.4.34"
+    mariadb_container_name: "mysql"
+    mariadb_root_password: "{{ root_password }}"
+    mariadb_host_dir: "/data/mysql"
+    backup_dir: "/data/backup"
+    # Custom MariaDB config variables
+    innodb_buffer_pool_size: "10G"
+    innodb_log_file_size: "1G"
+    innodb_log_files_in_group: 2
+    innodb_flush_method: "O_DIRECT"
+    innodb_io_capacity: 6000
+    innodb_io_capacity_max: 12000
+    max_connections: 1000
+    thread_cache_size: 32
+    tmp_table_size: "128M"
+    max_heap_table_size: "128M"
+    query_cache_type: "OFF"
+    query_cache_size: 0
+    database_name: "{{ db_name }}"
+    gtid_domain_id: 1
+    server_id: 44
+    mariadb_custom_cnf: "/data/my_custom.cnf"
+  tasks:
+    - name: Ensure MariaDB config directory exists
+      ansible.builtin.file:
+        path: /opt/mariadb_config
+        state: directory
+        mode: "0755"
+
+    - name: Remove old custom MariaDB config if present
+      ansible.builtin.file:
+        path: "{{ mariadb_custom_cnf }}"
+        state: absent
+
+    - name: Render custom MariaDB config
+      ansible.builtin.template:
+        src: /etc/ansible/my_custom.cnf.j2
+        dest: "{{ mariadb_custom_cnf }}"
+        mode: "0644"
+
+    - name: Ensure backup directory exists on host
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Ensure data directory exists on host
+      ansible.builtin.file:
+        path: "{{ mariadb_host_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Run MariaDB Docker container with custom config
+      community.docker.docker_container:
+        name: "{{ mariadb_container_name }}"
+        image: "{{ mariadb_image }}"
+        state: started
+        recreate: true
+        restart_policy: always
+        volumes:
+          - "{{ mariadb_host_dir }}:/var/lib/mysql"
+          - "{{ backup_dir }}:{{ backup_dir }}"
+          - "{{ mariadb_custom_cnf }}:/etc/mysql/conf.d/my_custom.cnf:ro"
+          - "/mnt/replica-transfer-disk:/mnt/replica-transfer-disk"
+        env:
+          MARIADB_ROOT_PASSWORD: "{{ mariadb_root_password }}"
+        published_ports:
+          - "3306:3306"

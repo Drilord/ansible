@@ -1,0 +1,144 @@
+---
+# =============================================================================
+# Play 0: Create GCP Global TCP Load Balancer for MaxScale
+# =============================================================================
+
+- name: Create GCP Global TCP Load Balancer for MaxScale
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../group_vars/gcp.yml
+
+  vars:
+    lb_name: maxscale-stg-lb
+    backend_service_name: maxscale-backend-service
+    health_check_name: maxscale-tcp-health-check
+    frontend_name: maxscale-frontend-tcp-3306
+    static_ip_name: maxscale-stg-static-ip
+    maxscale_port: 3306
+    instance_group: "maxsc-instance-group-stg"
+    maxscale_tag: maxscale-node
+
+  tasks:
+    - name: Reserve a global static IP for the load balancer
+      google.cloud.gcp_compute_global_address:
+        name: "{{ static_ip_name }}"
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        state: present
+      register: lb_ip
+
+    - debug:
+        var: lb_ip
+
+    - name: Create TCP health check
+      google.cloud.gcp_compute_health_check:
+        name: "{{ health_check_name }}"
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        type: TCP
+        tcp_health_check:
+          port: "{{ maxscale_port }}"
+        state: present
+
+    - name: Create global backend service
+      google.cloud.gcp_compute_backend_service:
+        name: "{{ backend_service_name }}"
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        protocol: TCP
+        health_checks:
+          - "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/healthChecks/{{ health_check_name }}"
+        load_balancing_scheme: EXTERNAL
+        backends:
+          - group: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/regions/{{ region }}/instanceGroups/{{ instance_group }}"
+        state: present
+
+    - name: Create target TCP proxy
+      google.cloud.gcp_compute_target_tcp_proxy:
+        name: "{{ lb_name }}-tcp-proxy"
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        service:
+          selfLink: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/backendServices/{{ backend_service_name }}"
+        state: present
+      register: tcp_proxy
+      
+    - name: Create global forwarding rule (frontend)
+      google.cloud.gcp_compute_global_forwarding_rule:
+        name: "{{ frontend_name }}"
+        project: "{{ gcp_project_name }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        ip_address: "{{ lb_ip.address }}"
+        ip_protocol: TCP
+        port_range: "{{ maxscale_port | string }}"
+        target: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/targetTcpProxies/{{ lb_name }}-tcp-proxy"
+        load_balancing_scheme: EXTERNAL
+        state: present
+
+    - name: Create firewall rule for GCP health checks
+      google.cloud.gcp_compute_firewall:
+        name: allow-gcp-health-checks
+        project: "{{ gcp_project_name }}"
+        network:
+          selfLink: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/networks/staging-vpc"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        allowed:
+          - ip_protocol: tcp
+            ports: ["{{ maxscale_port }}"]
+        source_ranges:
+          - 35.191.0.0/16
+          - 130.211.0.0/22
+        target_tags: ["{{ maxscale_tag }}"]
+        direction: INGRESS
+        state: present
+
+    - name: Fail if do_app_ip is not defined
+      fail:
+        msg: "do_app_ip must be defined and not empty!"
+      when: do_app_ip is not defined or do_app_ip == ""    
+
+    - name: Create firewall rule for DigitalOcean app
+      google.cloud.gcp_compute_firewall:
+        name: allow-digitalocean-frontend
+        project: "{{ gcp_project_name }}"
+        network:
+          selfLink: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/networks/staging-vpc"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        allowed:
+          - ip_protocol: tcp
+            ports: ["{{ maxscale_port }}"]
+        source_ranges:
+          - "{{ do_app_ip | default('127.0.0.1/32')  }}"
+        target_tags: ["{{ maxscale_tag }}"]
+        direction: INGRESS
+        state: present
+    
+    - name: Fail if exit_nd_ip is not defined
+      fail:
+        msg: "exit_nd_ip must be defined and not empty!"
+      when: exit_nd_ip is not defined or exit_nd_ip == ""
+
+    - name: Allow access from exit-nd-ip
+      google.cloud.gcp_compute_firewall:
+        name: allow-exit-nd-ip
+        project: "{{ gcp_project_name }}"
+        network:
+          selfLink: "https://www.googleapis.com/compute/v1/projects/{{ gcp_project_name }}/global/networks/staging-vpc"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+        allowed:
+          - ip_protocol: tcp
+            ports: ["{{ maxscale_port }}"]
+        source_ranges:
+          - "{{ exit_nd_ip }}"
+        target_tags: ["{{ maxscale_tag }}"]
+        direction: INGRESS
+        state: present

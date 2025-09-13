@@ -1,0 +1,429 @@
+###################################################################
+# Play 0: Create and attach transfer disk to the MASTER (healthy db)
+# you just need to change the master_vm_host: to the correct GCP master host
+# and map the GCP file with the service account with enough permissions
+###################################################################
+---
+- name: Prepare transfer disk on the MASTER (healthy node)
+  hosts: localhost
+  gather_facts: no
+  tags:
+    - play0
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+  vars:
+    transfer_disk_bkp: bkp-transfer-disk
+    transfer_disk_size_gb: 100
+    transfer_disk_type: pd-ssd
+    master_vm_host: prod-replica-stg
+  tasks:
+    - name: Ensure GCP disk exists
+      google.cloud.gcp_compute_disk:
+        name: "{{ transfer_disk_bkp }}"
+        size_gb: "{{ transfer_disk_size_gb }}"
+        zone: "{{ replica_zone }}"
+        project: "{{ gcp_project_name }}"
+        type: "{{ transfer_disk_type }}"
+        state: present
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_service_account_file }}"
+
+    - name: Check which disks are already attached to the master VM
+      ansible.builtin.shell: |
+        /google-cloud-sdk/bin/gcloud compute instances describe {{ master_vm_host }} \
+          --zone={{ replica_zone }} \
+          --project={{ gcp_project_name }} \
+          --format="value(disks.deviceName)"
+      register: attached_disks
+      changed_when: false
+
+    - name: Attach disk to MASTER (healthy node) if not already attached
+      ansible.builtin.shell: >
+        /google-cloud-sdk/bin/gcloud compute instances attach-disk {{ master_vm_host }}
+        --disk={{ transfer_disk_bkp }}
+        --device-name={{ transfer_disk_bkp }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project_name }}
+        --quiet
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      when: transfer_disk_bkp not in attached_disks.stdout
+###############
+# Play 1: Backup the MASTER (healthy node) and copy to REPLICA (unhealthy or new node)
+# master_container: must match the master mdb container name 
+# also master_vm_host and mariadb_data_dir: must match the master host info
+###############
+- name: Backup the Master Database (instance2) and copy to transfer disk
+  hosts: master
+  become: yes
+  gather_facts: no
+  tags:
+    - play1
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    master_container: mysql
+    backup_user: "{{ db_bkp_user }}"
+    backup_password: "{{ bkp_u_pwd }}"
+    transfer_disk_bkp: bkp-transfer-disk
+    backup_mount: "/mnt/{{ transfer_disk_bkp }}"
+    backup_dir: "/mnt/{{ transfer_disk_bkp }}/backup1"
+    mariadb_data_dir: /data/mysql
+    master_vm_host: prod-replica-stg
+  tasks:
+    - name: Create mount point on the host
+      ansible.builtin.file:
+        path: "{{ backup_mount }}"
+        state: directory
+
+    - name: Format transfer disk if needed
+      ansible.builtin.filesystem:
+        fstype: xfs
+        dev: "/dev/disk/by-id/google-{{ transfer_disk_bkp }}"
+        force: no
+
+    - name: Ensure transfer disk mount in fstab uses 'nofail'
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^/dev/disk/by-id/google-{{ transfer_disk_bkp }}'
+        line: '/dev/disk/by-id/google-{{ transfer_disk_bkp }} {{ backup_mount }} xfs defaults,nofail 0 0'
+        state: present
+
+    - name: Mount transfer disk to the host
+      ansible.builtin.mount:
+        path: "{{ backup_mount }}"
+        src: "/dev/disk/by-id/google-{{ transfer_disk_bkp }}"
+        fstype: xfs
+        state: mounted
+
+    - name: Ensure mdbnet Docker network exists
+      community.docker.docker_network:
+        name: mdbnet
+        state: present
+
+    - name: Connect master container to mdbnet network
+      ansible.builtin.shell: docker network connect mdbnet {{ master_container }}
+      register: connect_network
+      changed_when: connect_network.rc == 0
+      failed_when: >
+        connect_network.rc != 0 and 'already exists in network' not in connect_network.stderr
+        
+    - name: Remove any existing mariabackup-helper container
+      community.docker.docker_container:
+        name: mariabackup-helper
+        state: absent
+        force_kill: true
+
+    - name: Ensure helper container exists and is running
+      community.docker.docker_container:
+        name: mariabackup-helper
+        image: mariadb:10.4.34
+        state: started
+        networks:
+          - name: mdbnet
+        mounts:
+          - type: bind
+            source: "{{ mariadb_data_dir }}"
+            target: /var/lib/mysql
+            read_only: true
+          - type: bind
+            source: "{{ backup_mount }}"
+            target: /mnt/transfer
+        command: sleep infinity
+        restart_policy: unless-stopped
+
+    - name: Remove old backup directory if it exists
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: absent
+
+    - name: Recreate backup directory
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Run mariadb-backup --backup inside helper container
+      community.docker.docker_container_exec:
+        container: mariabackup-helper
+        command: >
+          mariadb-backup --backup
+          --host={{ master_container }}
+          --port=3306
+          --datadir=/var/lib/mysql
+          --target-dir=/mnt/transfer/backup1
+          --user={{ backup_user }}
+          --password='{{ backup_password }}'
+      register: backup_result
+      changed_when: backup_result.rc == 0
+      failed_when: backup_result.rc != 0
+
+    - name: Prepare backup in helper container
+      community.docker.docker_container_exec:
+        container: mariabackup-helper
+        command: mariadb-backup --prepare --target-dir=/mnt/transfer/backup1
+      register: helper_prepare_result
+      changed_when: helper_prepare_result.rc == 0
+      failed_when: helper_prepare_result.rc != 0
+
+    - name: Remove mariabackup-helper container
+      community.docker.docker_container:
+        name: mariabackup-helper
+        state: absent
+        force_kill: true
+
+    - name: Unmount and detach the disk from the master host
+      block:
+        - name: Unmount transfer disk from host
+          ansible.builtin.mount:
+            path: "{{ backup_mount }}"
+            state: unmounted
+        - name: Detach disk from master VM
+          ansible.builtin.shell: >
+            /google-cloud-sdk/bin/gcloud compute instances detach-disk {{ master_vm_host }}
+            --disk={{ transfer_disk_bkp }}
+            --zone={{ replica_zone }}
+            --project={{ gcp_project_name }}
+            --quiet
+          delegate_to: localhost
+          environment:
+            CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+######################
+# Play 2: Restore backup onto the REPLICA (unhealthy or new node)
+# replica_vm_host: GCP hostname of the replica target
+# mariadb_replica_dir: must match the replica mdb data directory target 
+# also replica_container: must match the replica mdb container name
+######################
+- name: Restore Backup to the Replica
+  hosts: instance2
+  become: yes
+  gather_facts: no
+  tags:
+    - play2
+  vars_files:
+    - /etc/ansible/group_vars/gcp.yml
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    replica_vm_host: instance2-us-south1-a
+    replica_container: mdb-instance2
+    transfer_disk_bkp: bkp-transfer-disk
+    backup_mount: "/mnt/{{ transfer_disk_bkp }}"
+    backup_dir: "/mnt/{{ transfer_disk_bkp }}/backup1"
+    mariadb_replica_dir: /mnt/mdbdisk
+  tasks:
+    - name: Check which disks are already attached to the replica VM
+      ansible.builtin.shell: >
+        /google-cloud-sdk/bin/gcloud compute instances describe {{ replica_vm_host }} \
+          --zone={{ replica_zone }} \
+          --project={{ gcp_project_name }} \
+          --format="value(disks.deviceName)"
+      delegate_to: localhost 
+      register: replica_attached_disks
+      changed_when: false
+      
+
+    - name: Attach disk to REPLICA if not already attached
+      ansible.builtin.shell: >
+        /google-cloud-sdk/bin/gcloud compute instances attach-disk {{ replica_vm_host }}
+        --disk={{ transfer_disk_bkp }}
+        --device-name={{ transfer_disk_bkp }}
+        --zone={{ replica_zone }}
+        --project={{ gcp_project_name }}
+        --quiet
+      delegate_to: localhost
+      environment:
+        CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+      when: transfer_disk_bkp not in replica_attached_disks.stdout
+
+    - name: Ensure backup mount point exists on replica
+      ansible.builtin.file:
+        path: "{{ backup_mount }}"
+        state: directory
+
+    - name: Ensure transfer disk mount in fstab uses 'nofail' (replica)
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^/dev/disk/by-id/google-{{ transfer_disk_bkp }}'
+        line: '/dev/disk/by-id/google-{{ transfer_disk_bkp }} {{ backup_mount }} xfs defaults,nofail 0 0'
+        state: present
+
+    - name: Format transfer disk if needed
+      ansible.builtin.filesystem:
+        fstype: xfs
+        dev: "/dev/disk/by-id/google-{{ transfer_disk_bkp }}"
+        force: no
+
+    - name: Mount transfer disk to the replica host
+      ansible.builtin.mount:
+        path: "{{ backup_mount }}"
+        src: "/dev/disk/by-id/google-{{ transfer_disk_bkp }}"
+        fstype: xfs
+        opts: nofail
+        state: mounted
+
+    - name: Stop MariaDB container on bkp
+      community.docker.docker_container:
+        name: "{{ replica_container }}"
+        state: stopped
+
+    - name: Find all files and directories in data dir
+      ansible.builtin.find:
+        paths: "{{ mariadb_replica_dir }}"
+      register: files_to_remove
+
+    - name: Remove all files and directories in data dir
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ files_to_remove.files }}"
+
+    - name: Recreate data directory
+      ansible.builtin.file:
+        path: "{{ mariadb_replica_dir }}"
+        state: directory
+        owner: "999"
+        group: "999"
+        mode: '0755'
+
+    - name: Ensure restore-helper container is absent before creation
+      community.docker.docker_container:
+        name: mariabackup-restore-helper
+        state: absent
+        force_kill: true
+
+    - name: Create a temporary restore-helper container
+      community.docker.docker_container:
+        name: mariabackup-restore-helper
+        image: mariadb:10.4.34
+        state: started
+        command: sleep infinity
+        mounts:
+          - type: bind
+            source: "{{ backup_dir }}"
+            target: /backup_source
+            read_only: true
+          - type: bind
+            source: "{{ mariadb_replica_dir }}"
+            target: /var/lib/mysql
+
+    - name: Check if ibdata1 exists in the data directory inside the container
+      community.docker.docker_container_exec:
+        container: mariabackup-restore-helper
+        command: test -f /var/lib/mysql/ibdata1
+      register: ibdata1_check
+      ignore_errors: true
+
+    - name: Execute --copy-back in the restore-helper container (only if not already restored)
+      community.docker.docker_container_exec:
+        container: mariabackup-restore-helper
+        command: mariadb-backup --copy-back --target-dir=/backup_source
+      register: copy_back_result
+      failed_when: copy_back_result is defined and copy_back_result.rc is defined and copy_back_result.rc != 0
+      when: ibdata1_check.rc != 0
+
+    - name: Remove the restore-helper container
+      community.docker.docker_container:
+        name: mariabackup-restore-helper
+        state: absent
+
+    - name: Ensure correct ownership of data directory
+      ansible.builtin.command: chown -R 999:999 {{ mariadb_replica_dir }}
+
+    - name: Start MariaDB container on bkp
+      community.docker.docker_container:
+        name: "{{ replica_container }}"
+        state: started
+
+    - name: Unmount and detach disk from bkp
+      block:
+        - name: Mount disk to unmount it (workaround for some systems)
+          ansible.builtin.mount:
+            path: "{{ backup_mount }}"
+            src: "/dev/disk/by-id/google-{{ transfer_disk_bkp }}"
+            fstype: xfs
+            state: mounted
+        - name: Unmount transfer disk
+          ansible.builtin.mount:
+            path: "{{ backup_mount }}"
+            state: unmounted
+        - name: Detach disk from bkp
+          ansible.builtin.shell: >
+            /google-cloud-sdk/bin/gcloud compute instances detach-disk {{ replica_vm_host }}
+            --disk={{ transfer_disk_bkp }}
+            --zone={{ replica_zone }}
+            --project={{ gcp_project_name }}
+            --quiet
+          delegate_to: localhost
+          environment:
+            CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: "{{ gcp_service_account_file }}"
+###################################################################################
+# Play 3: Reconfigure replication on the newly restored bkp replica
+#if using a root password user the grpu_vars files to set the   replica_root_pwd: "{{ root_password }}" use the root_password variable
+# this play hosts: must be the new or newly restored ndoe 
+#####################################################################################
+
+- name: Reconfigure Replication on the New Replica
+  hosts: instance2
+  become: yes
+  gather_facts: no
+  tags:
+    - play3
+  vars_files:
+    - /etc/ansible/group_vars/mariadb.yml
+  vars:
+    replica_container: mdb-instance2
+    master_db_host: 100.120.140.127
+    db_repl_user: "{{ db_repl_user }}"
+    db_repl_password: "{{ db_repl_password }}"
+    replica_root_pwd: "{{ root_password }}"
+  tasks:
+    - name: Check replication status
+      ansible.builtin.command: >
+        docker exec {{ replica_container }} mysql -uroot -p'{{ replica_root_pwd }}' -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: false
+      retries: 2
+      delay: 3
+
+    - name: Skip remaining tasks if replication is running
+      ansible.builtin.meta: end_host
+      when: >
+        'Slave_IO_Running: Yes' in slave_status.stdout and
+        'Slave_SQL_Running: Yes' in slave_status.stdout
+
+    - name: Stop replication on replica
+      ansible.builtin.shell: >
+        docker exec {{ replica_container }} mysql -uroot{% if replica_root_pwd %} -p'{{ replica_root_pwd }}'{% endif %} -e "
+        STOP SLAVE;
+        RESET SLAVE ALL;
+        RESET MASTER;
+        CHANGE MASTER TO
+          MASTER_HOST='{{ master_db_host }}',
+          MASTER_USER='{{ db_repl_user }}',
+          MASTER_PASSWORD='{{ db_repl_password }}',
+          MASTER_USE_GTID=slave_pos;
+        START SLAVE;"
+      register: replication_setup
+      changed_when: replication_setup == 0
+
+    - name: Check replication status
+      ansible.builtin.command: >
+        docker exec {{ replica_container }} mysql -uroot{% if replica_root_pwd %} -p'{{ replica_root_pwd }}'{% endif %} -Be "SHOW SLAVE STATUS\G"
+      register: slave_status
+      changed_when: false
+      failed_when: >
+        'Slave_IO_Running: Yes' not in slave_status.stdout or
+        'Slave_SQL_Running: Yes' not in slave_status.stdout
+      retries: 10
+      delay: 15
+
+    - name: Display replication status
+      ansible.builtin.debug:
+        msg:
+          - "Replication IO Thread Running: {{ slave_status.stdout | regex_search('Slave_IO_Running: (\\w+)', '\\1') | first }}"
+          - "Replication SQL Thread Running: {{ slave_status.stdout | regex_search('Slave_SQL_Running: (\\w+)', '\\1') | first }}"
+          - "Seconds Behind Master: {{ slave_status.stdout | regex_search('Seconds_Behind_Master: (\\d+)', '\\1') | first }}"
+          - "Last IO Error: {{ slave_status.stdout | regex_search('Last_IO_Error: (.*)', '\\1') | first }}"
+          - "Last SQL Error: {{ slave_status.stdout | regex_search('Last_SQL_Error: (.*)', '\\1') | first }}"

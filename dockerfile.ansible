@@ -1,0 +1,48 @@
+# Use the latest Ubuntu image
+FROM ubuntu:latest
+
+# Set environment variables to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update the package list and install required dependencies
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    apt-add-repository --yes --update ppa:ansible/ansible && \
+    apt-get install -y ansible && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Add Docker connection tools
+RUN apt-get update && \
+    apt-get install -y python3-pip python3-docker docker.io && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install useful network and editor tools
+RUN apt-get update && \
+    apt-get install -y iproute2 iputils-ping net-tools vim nano && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Google Cloud Python libraries (ignore warnings)
+RUN pip install --break-system-packages -q google-auth google-api-python-client 2>/dev/null
+
+# Install curl and Tailscale
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -fsSL https://tailscale.com/install.sh | sh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Google Cloud CLI
+RUN apt-get update && \
+    apt-get install -y apt-transport-https ca-certificates gnupg curl && \
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee /etc/apt/sources.list.d/google-cloud-sdk.list && \
+    curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
+    apt-get update && \
+    apt-get install -y google-cloud-sdk && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set the default command to keep the container running
+CMD ["sleep", "infinity"]

@@ -2,14 +2,14 @@ services:
   ansible:
     build:
       context: .
-      dockerfile: dockerfile
+      dockerfile: dockerfile.ansible
     container_name: ansible
     hostname: ansible-devops
     restart: unless-stopped
     volumes:
       - ./:/etc/ansible
       - /var/run/docker.sock:/var/run/docker.sock
-      - \\wsl.localhost\Ubuntu\home\ubuntu\.ssh:/root/.Hkeys:ro
+#      - \\wsl.localhost\Ubuntu\home\ubuntu\.ssh:/root/.Hkeys:ro
     environment:
       - TAILSCALE_AUTH_KEY=your-auth-key-here
     tty: true
@@ -19,7 +19,8 @@ services:
       - NET_RAW
     devices:
       - /dev/net/tun:/dev/net/tun
-    command: ["sleep", "infinity"]
+    working_dir: /etc/ansible
+    command: ["sh", "tailscale.sh"]
     logging: &logging
       driver: "json-file"
       options:

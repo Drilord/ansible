@@ -16,7 +16,5 @@ else
     echo "$status"
 fi
 
-pip install google-auth google-api-python-client --break-system-packages
-
 # Keep the container running
 exec sleep infinity
